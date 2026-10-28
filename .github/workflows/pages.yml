@@ -44,13 +44,47 @@ jobs:
       - name: Install wasm-tools workload
         run: dotnet workload install wasm-tools
 
+      # В NativeWasm отключён workload resolver, поэтому путь к Emscripten
+      # из установленного workload нужно передать в MSBuild явно.
+      - name: Locate Emscripten from wasm-tools
+        id: emsdk
+        run: |
+          DOTNET_DIR="$(dirname "$(readlink -f "$(command -v dotnet)")")"
+          EMSDK_TOOLS="$(ls -d "$DOTNET_DIR"/packs/Microsoft.NET.Runtime.Emscripten.*.Sdk.linux-x64/*/tools 2>/dev/null | sort -V | tail -n 1)"
+          if [ -z "$EMSDK_TOOLS" ]; then
+            echo "::error::Emscripten pack не найден в $DOTNET_DIR/packs"
+            ls -1 "$DOTNET_DIR/packs" | grep -i emscripten || true
+            exit 1
+          fi
+          echo "Emscripten SDK tools: $EMSDK_TOOLS"
+          echo "path=$EMSDK_TOOLS" >> "$GITHUB_OUTPUT"
+
+          # emcc запускается через python3 и местами использует node.
+          # Обычно workload сам добавляет их в PATH, но resolver отключён.
+          PYTHON_TOOLS="$(ls -d "$DOTNET_DIR"/packs/Microsoft.NET.Runtime.Emscripten.*.Python.linux-x64/*/tools 2>/dev/null | sort -V | tail -n 1)"
+          if [ -n "$PYTHON_TOOLS" ]; then
+            echo "EMSDK_PYTHON=$PYTHON_TOOLS/bin/python3" >> "$GITHUB_ENV"
+            echo "PYTHONUTF8=1" >> "$GITHUB_ENV"
+            echo "$PYTHON_TOOLS/bin" >> "$GITHUB_PATH"
+            echo "Emscripten Python: $PYTHON_TOOLS/bin/python3"
+          fi
+
+          NODE_TOOLS="$(ls -d "$DOTNET_DIR"/packs/Microsoft.NET.Runtime.Emscripten.*.Node.linux-x64/*/tools 2>/dev/null | sort -V | tail -n 1)"
+          if [ -n "$NODE_TOOLS" ]; then
+            echo "$NODE_TOOLS/bin" >> "$GITHUB_PATH"
+            echo "Emscripten Node: $NODE_TOOLS/bin"
+          fi
+
       - name: Prepare site
         run: |
           mkdir -p site
           cp demo/index.html demo/app.js demo/styles.css demo/runtime.js site/
 
       - name: Publish NativeWasm
-        run: dotnet publish src/Mp4BoxKit.NativeWasm/Mp4BoxKit.NativeWasm.csproj -c Release -r browser-wasm -o site
+        run: >
+          dotnet publish src/Mp4BoxKit.NativeWasm/Mp4BoxKit.NativeWasm.csproj
+          -c Release -r browser-wasm -o site
+          -p:EmscriptenSdkToolsPath="${{ steps.emsdk.outputs.path }}"
 
       - name: Disable Jekyll
         run: touch site/.nojekyll
