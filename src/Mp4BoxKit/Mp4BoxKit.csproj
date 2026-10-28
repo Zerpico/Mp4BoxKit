@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsAotCompatible>true</IsAotCompatible>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>Mp4BoxKit</RootNamespace>
+    <PackageId>Mp4BoxKit</PackageId>
+    <Title>Mp4BoxKit</Title>
+    <Description>ISO-BMFF MP4 and fragmented MP4 packaging for .NET with streaming segment delivery.</Description>
+    <Authors>Mp4BoxKit contributors</Authors>
+    <PackageTags>mp4;fmp4;iso-bmff;h264;h265;aac;muxer;streaming</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+</Project>

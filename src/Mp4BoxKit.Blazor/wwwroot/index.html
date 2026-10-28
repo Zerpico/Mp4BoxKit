@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <base href="./">
+  <title>Mp4BoxKit Inspector</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="importmap"></script>
+</head>
+<body>
+  <div id="blazor-root" hidden></div>
+
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">M</div>
+      <div>
+        <p class="eyebrow">Mp4BoxKit</p>
+        <h1>MP4 inspector</h1>
+      </div>
+    </div>
+    <div class="header-actions">
+      <span class="native-badge" id="runtime-badge">WASM</span>
+      <button class="icon-button" id="theme-toggle" type="button" title="Toggle theme">
+        <span id="theme-icon">◐</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="panel upload-panel" id="upload-panel">
+      <div class="drop-zone" id="drop-zone">
+        <input id="file" type="file" accept=".mp4,.m4a,.m4v,.mov,video/mp4,audio/mp4">
+        <div class="drop-icon" aria-hidden="true">⇧</div>
+        <div>
+          <h2>Open an MP4 file</h2>
+          <p>Drop a file here or choose one from disk. Everything is inspected locally.</p>
+        </div>
+      </div>
+
+      <div class="file-row" id="file-row" hidden>
+        <div class="file-chip">
+          <span class="file-chip-icon">MP4</span>
+          <div>
+            <strong id="file-name"></strong>
+            <span id="file-size"></span>
+          </div>
+        </div>
+        <button class="secondary" id="change-file" type="button">Change file</button>
+      </div>
+
+      <div class="toolbar">
+        <label class="check-control">
+          <input id="include-samples" type="checkbox" checked>
+          <span>Read sample metadata</span>
+        </label>
+        <label class="check-control">
+          <input id="include-segments" type="checkbox" checked>
+          <span>Inspect segments</span>
+        </label>
+        <label class="check-control">
+          <span class="limit-label">Sample limit</span>
+          <input id="max-samples" class="number-input" type="number" min="1" max="100000" value="1000">
+        </label>
+        <button id="inspect" type="button" disabled>Inspect file</button>
+      </div>
+
+      <p class="status" id="status">Loading WASM module…</p>
+    </section>
+
+    <section class="panel result-panel" id="result" hidden>
+      <div class="result-header">
+        <div>
+          <p class="eyebrow" id="result-file"></p>
+          <h2 id="result-title">Inspection result</h2>
+        </div>
+        <div class="header-actions">
+          <button class="secondary" id="copy-json" type="button">Copy JSON</button>
+          <button class="secondary" id="download-json" type="button">Download JSON</button>
+        </div>
+      </div>
+
+      <div class="summary-grid" id="summary"></div>
+      <div class="warning-banner" id="warnings" hidden></div>
+
+      <nav class="pivot" id="tabs" aria-label="Inspection sections">
+        <button type="button" data-tab="overview" class="active">Overview</button>
+        <button type="button" data-tab="boxes">Boxes</button>
+        <button type="button" data-tab="samples">Samples</button>
+        <button type="button" data-tab="segments">Segments</button>
+        <button type="button" data-tab="raw">Raw JSON</button>
+      </nav>
+
+      <div class="tab-pane" id="tab-overview"></div>
+      <div class="tab-pane" id="tab-boxes" hidden>
+        <div class="boxes-workspace">
+          <section class="box-pane tree-pane">
+            <div class="pane-header">
+              <span class="pane-title">Box Tree View</span>
+              <span class="pane-count" id="box-count"></span>
+            </div>
+            <div class="table-toolbar tree-toolbar">
+              <input id="box-search" class="search-input" type="search" placeholder="Filter boxes…">
+              <button class="secondary small" id="expand-boxes" type="button">Expand</button>
+              <button class="secondary small" id="collapse-boxes" type="button">Collapse</button>
+            </div>
+            <div id="box-tree" class="box-tree"></div>
+          </section>
+
+          <section class="box-pane properties-pane">
+            <div class="pane-header">
+              <span class="pane-title">Box Property View</span>
+              <span class="pane-path" id="box-path"></span>
+            </div>
+            <div id="box-properties" class="box-properties"></div>
+          </section>
+        </div>
+      </div>
+      <div class="tab-pane" id="tab-samples" hidden>
+        <div class="table-toolbar">
+          <select id="sample-track" class="select-input"></select>
+          <span class="table-note" id="sample-note"></span>
+        </div>
+        <div id="sample-table" class="table-wrap"></div>
+      </div>
+      <div class="tab-pane" id="tab-segments" hidden>
+        <div id="segment-table" class="table-wrap"></div>
+      </div>
+      <div class="tab-pane" id="tab-raw" hidden>
+        <pre id="raw-json" class="code-block"></pre>
+      </div>
+    </section>
+  </main>
+
+  <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
+  <script src="runtime.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

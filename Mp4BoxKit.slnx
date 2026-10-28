@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Mp4BoxKit/Mp4BoxKit.csproj" />
+    <Project Path="src/Mp4BoxKit.Inspection/Mp4BoxKit.Inspection.csproj" />
+    <Project Path="src/Mp4BoxKit.Blazor/Mp4BoxKit.Blazor.csproj" />
+    <Project Path="src/Mp4BoxKit.Cli/Mp4BoxKit.Cli.csproj" />
+    <Project Path="src/Mp4BoxKit.NativeWasm/Mp4BoxKit.NativeWasm.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Mp4BoxKit.Tests/Mp4BoxKit.Tests.csproj" />
+    <Project Path="tests/Mp4BoxKit.Inspection.Tests/Mp4BoxKit.Inspection.Tests.csproj" />
+    <Project Path="tests/Mp4BoxKit.FFmpeg.Tests/Mp4BoxKit.FFmpeg.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Mp4BoxKit.LiveProbe/Mp4BoxKit.LiveProbe.csproj" />
+  </Folder>
+</Solution>
