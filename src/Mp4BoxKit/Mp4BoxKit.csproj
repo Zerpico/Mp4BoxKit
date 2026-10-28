@@ -15,8 +15,17 @@
     <Authors>Mp4BoxKit contributors</Authors>
     <PackageTags>mp4;fmp4;iso-bmff;h264;h265;aac;muxer;streaming</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Version>1.0.0</Version>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/Zerpico/Mp4BoxKit</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/Zerpico/Mp4BoxKit</PackageProjectUrl>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Link="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
 </Project>

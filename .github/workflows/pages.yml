@@ -1,0 +1,71 @@
+name: Deploy demo to GitHub Pages
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  deploy:
+    name: Build WASM and deploy
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            NuGet.Config
+            src/Mp4BoxKit.NativeWasm/nuget.config
+
+      # Emscripten 3.1.56 приходит вместе с workload wasm-tools.
+      - name: Install wasm-tools workload
+        run: dotnet workload install wasm-tools
+
+      - name: Prepare site
+        run: |
+          mkdir -p site
+          cp demo/index.html demo/app.js demo/styles.css demo/runtime.js site/
+
+      - name: Publish NativeWasm
+        run: dotnet publish src/Mp4BoxKit.NativeWasm/Mp4BoxKit.NativeWasm.csproj -c Release -r browser-wasm -o site
+
+      - name: Disable Jekyll
+        run: touch site/.nojekyll
+
+      - name: Sanity check
+        run: |
+          test -f site/index.html
+          test -f site/Mp4BoxKit.NativeWasm.js
+          test -f site/Mp4BoxKit.NativeWasm.wasm
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,152 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # На PR отменяем устаревшие запуски, на master — нет, чтобы не прервать публикацию.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  CI: true
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            NuGet.Config
+
+      - name: Restore
+        run: dotnet restore src/Mp4BoxKit/Mp4BoxKit.csproj
+
+      - name: Build
+        run: dotnet build src/Mp4BoxKit/Mp4BoxKit.csproj -c Release --no-restore -p:ContinuousIntegrationBuild=true
+
+      - name: Pack
+        run: dotnet pack src/Mp4BoxKit/Mp4BoxKit.csproj -c Release --no-build -p:ContinuousIntegrationBuild=true -o artifacts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nuget-package
+          path: artifacts/*.nupkg
+          if-no-files-found: error
+          retention-days: 7
+
+  test:
+    name: Test (${{ matrix.name }})
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: core
+            project: tests/Mp4BoxKit.Tests/Mp4BoxKit.Tests.csproj
+          - name: inspection
+            project: tests/Mp4BoxKit.Inspection.Tests/Mp4BoxKit.Inspection.Tests.csproj
+          - name: ffmpeg
+            project: tests/Mp4BoxKit.FFmpeg.Tests/Mp4BoxKit.FFmpeg.Tests.csproj
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            NuGet.Config
+
+      # FFmpeg-тесты запускают CLI ffmpeg, а не только используют нативные библиотеки.
+      - name: Install FFmpeg CLI
+        if: matrix.name == 'ffmpeg'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Restore
+        run: dotnet restore ${{ matrix.project }}
+
+      - name: Test
+        run: >
+          dotnet test ${{ matrix.project }} -c Release --no-restore
+          --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=results.trx"
+          --results-directory test-results
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.name }}
+          path: test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    name: Publish NuGet
+    needs: [build, test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: nuget-package
+          path: artifacts
+
+      - name: Verify NUGET_USER secret
+        env:
+          NUGET_USER: ${{ secrets.NUGET_USER }}
+        run: |
+          if [ -z "$NUGET_USER" ]; then
+            echo "::error::Secret NUGET_USER не задан. Добавьте имя пользователя nuget.org в Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+
+      # Обменивает OIDC-токен GitHub на временный API-ключ nuget.org (живёт 1 час).
+      - name: NuGet login (OIDC -> temp API key)
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: Push to nuget.org
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: |
+          if [ -z "$NUGET_API_KEY" ]; then
+            echo "::error::Не удалось получить временный ключ NuGet. Проверьте политику Trusted Publishing на nuget.org."
+            exit 1
+          fi
+          dotnet nuget push artifacts/*.nupkg \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key "$NUGET_API_KEY" \
+            --skip-duplicate
