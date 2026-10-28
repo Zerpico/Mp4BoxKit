@@ -40,7 +40,7 @@ jobs:
             NuGet.Config
             src/Mp4BoxKit.NativeWasm/nuget.config
 
-      # Emscripten 3.1.56 приходит вместе с workload wasm-tools.
+      # Workload нужен для cross-AOT паков .NET.
       - name: Install wasm-tools workload
         run: dotnet workload install wasm-tools
 
@@ -50,30 +50,48 @@ jobs:
         id: emsdk
         run: |
           DOTNET_DIR="$(dirname "$(readlink -f "$(command -v dotnet)")")"
+
           EMSDK_TOOLS="$(ls -d "$DOTNET_DIR"/packs/Microsoft.NET.Runtime.Emscripten.*.Sdk.linux-x64/*/tools 2>/dev/null | sort -V | tail -n 1)"
-          if [ -z "$EMSDK_TOOLS" ]; then
-            echo "::error::Emscripten pack не найден в $DOTNET_DIR/packs"
+          NODE_TOOLS="$(ls -d "$DOTNET_DIR"/packs/Microsoft.NET.Runtime.Emscripten.*.Node.linux-x64/*/tools 2>/dev/null | sort -V | tail -n 1)"
+          CACHE_TOOLS="$(ls -d "$DOTNET_DIR"/packs/Microsoft.NET.Runtime.Emscripten.*.Cache.linux-x64/*/tools 2>/dev/null | sort -V | tail -n 1)"
+
+          if [ -z "$EMSDK_TOOLS" ] || [ -z "$NODE_TOOLS" ] || [ -z "$CACHE_TOOLS" ]; then
+            echo "::error::Emscripten packs не найдены в $DOTNET_DIR/packs"
             ls -1 "$DOTNET_DIR/packs" | grep -i emscripten || true
             exit 1
           fi
-          echo "Emscripten SDK tools: $EMSDK_TOOLS"
+
+          echo "Emscripten SDK:   $EMSDK_TOOLS"
+          echo "Emscripten Node:  $NODE_TOOLS"
+          echo "Emscripten Cache: $CACHE_TOOLS"
+
+          for tool in "$EMSDK_TOOLS/bin/clang" "$EMSDK_TOOLS/emscripten/emcc" "$NODE_TOOLS/bin/node"; do
+            if [ ! -e "$tool" ]; then
+              echo "::error::Не найден $tool"
+              exit 1
+            fi
+          done
+
+          # Завершающий слэш обязателен: Sdk.props склеивает пути как
+          # "$(EmscriptenSdkToolsPath)emscripten\".
           echo "path=$EMSDK_TOOLS/" >> "$GITHUB_OUTPUT"
 
-          # emcc запускается через python3 и местами использует node.
-          # Обычно workload сам добавляет их в PATH, но resolver отключён.
-          PYTHON_TOOLS="$(ls -d "$DOTNET_DIR"/packs/Microsoft.NET.Runtime.Emscripten.*.Python.linux-x64/*/tools 2>/dev/null | sort -V | tail -n 1)"
-          if [ -n "$PYTHON_TOOLS" ]; then
-            echo "EMSDK_PYTHON=$PYTHON_TOOLS/bin/python3" >> "$GITHUB_ENV"
-            echo "PYTHONUTF8=1" >> "$GITHUB_ENV"
-            echo "$PYTHON_TOOLS/bin" >> "$GITHUB_PATH"
-            echo "Emscripten Python: $PYTHON_TOOLS/bin/python3"
-          fi
+          # emcc читает эти переменные из своего .emscripten-конфига.
+          {
+            echo "DOTNET_EMSCRIPTEN_LLVM_ROOT=$EMSDK_TOOLS/bin"
+            echo "DOTNET_EMSCRIPTEN_BINARYEN_ROOT=$EMSDK_TOOLS"
+            echo "DOTNET_EMSCRIPTEN_NODE_JS=$NODE_TOOLS/bin/node"
+            echo "EM_CACHE=$CACHE_TOOLS/emscripten/cache"
+            echo "EM_FROZEN_CACHE=1"
+            echo "PYTHONUTF8=1"
+            echo "EM_WORKAROUND_PYTHON_BUG_34780=1"
+          } >> "$GITHUB_ENV"
 
-          NODE_TOOLS="$(ls -d "$DOTNET_DIR"/packs/Microsoft.NET.Runtime.Emscripten.*.Node.linux-x64/*/tools 2>/dev/null | sort -V | tail -n 1)"
-          if [ -n "$NODE_TOOLS" ]; then
-            echo "$NODE_TOOLS/bin" >> "$GITHUB_PATH"
-            echo "Emscripten Node: $NODE_TOOLS/bin"
-          fi
+          {
+            echo "$EMSDK_TOOLS/bin"
+            echo "$EMSDK_TOOLS/emscripten"
+            echo "$NODE_TOOLS/bin"
+          } >> "$GITHUB_PATH"
 
       - name: Prepare site
         run: |
