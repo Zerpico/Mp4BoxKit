@@ -266,23 +266,11 @@ demo/Mp4BoxKit.NativeWasm.wasm
 пакеты из `dotnet-experimental` через корневой `NuGet.Config`.
 
 ```powershell
-dotnet publish src/Mp4BoxKit.NativeWasm `
-    -c Release -r browser-wasm -o demo
+dotnet publish src/Mp4BoxKit.NativeWasm  -c Release -r browser-wasm -o demo
 ```
 
 Запуск через любой static server:
 
-```powershell
-npx serve demo -l 8081
-# или
-python -m http.server 8081 --directory demo
-# или
-dotnet tool install --global dotnet-serve
-dotnet serve -d demo -p 8081
-```
-
-Открыть `http://localhost:8081`. Модуль экспортирует C-ABI:
-`mp4boxkit_alloc`, `mp4boxkit_inspect`, `mp4boxkit_free`.
 
 #### Blazor WASM
 
@@ -294,9 +282,7 @@ Blazor — вариант для разработки и отладки. Он с
 dotnet run --project src/Mp4BoxKit.Blazor -c Debug
 ```
 
-Открыть `http://localhost:5081`. Blazor-specific `index.html` и `runtime.js`
-лежат в `src/Mp4BoxKit.Blazor/wwwroot`; общие `app.js` и `styles.css`
-копируются из `demo` во время сборки.
+Открыть `http://localhost:5081`
 
 ## Сборка и тесты
 
@@ -304,32 +290,4 @@ dotnet run --project src/Mp4BoxKit.Blazor -c Debug
 dotnet restore Mp4BoxKit.slnx
 dotnet build Mp4BoxKit.slnx -c Release
 dotnet test Mp4BoxKit.slnx -c Release
-dotnet format Mp4BoxKit.slnx whitespace --verify-no-changes
 ```
-
-Native FFmpeg-тесты требуют FFmpeg 6 shared libraries:
-
-```powershell
-$env:MP4BOXKIT_FFMPEG_ROOT = "C:\path\to\ffmpeg-6\bin"
-dotnet test Mp4BoxKit.slnx -c Release
-```
-
-## CI/CD
-
-- `.github/workflows/ci.yml` — restore, проверка форматирования, тесты;
-- `.github/workflows/pages.yml` — Windows runner, `wasm-tools`, прямой
-  `dotnet publish` NativeAOT в `demo` и публикация GitHub Pages.
-
-Скриптов сборки в репозитории нет: локальные команды и CI используют
-`dotnet`/MSBuild напрямую.
-
-## Ограничения
-
-- Writer не кодирует медиа: он ожидает готовые access units и codec
-  configuration от вызывающего кода.
-- H.264/H.265 samples должны быть length-prefixed; Annex B конвертируется
-  явно.
-- NativeAOT-LLVM экспериментален и требует внешнего Emscripten или WASI SDK.
-- Classic MP4 больше 4 GiB и полная совместимость с edit lists/плеерами не
-  заявлены.
-- Защита от malformed input и редкие codec profiles покрываются постепенно.
