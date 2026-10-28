@@ -1,4 +1,4 @@
-name: Deploy demo to GitHub Pages
+﻿name: Deploy demo to GitHub Pages
 
 on:
   push:
@@ -57,7 +57,7 @@ jobs:
             exit 1
           fi
           echo "Emscripten SDK tools: $EMSDK_TOOLS"
-          echo "path=$EMSDK_TOOLS" >> "$GITHUB_OUTPUT"
+          echo "path=$EMSDK_TOOLS/" >> "$GITHUB_OUTPUT"
 
           # emcc запускается через python3 и местами использует node.
           # Обычно workload сам добавляет их в PATH, но resolver отключён.
