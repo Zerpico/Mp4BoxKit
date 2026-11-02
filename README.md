@@ -1,4 +1,5 @@
 ﻿# Mp4BoxKit
+[![nuget](https://img.shields.io/nuget/v/Mp4BoxKit.svg)](https://www.nuget.org/packages/Mp4BoxKit/)  
 
 Простая и лёгкая .NET-библиотека для чтения, записи и инспекции MP4/fMP4. Она рассчитана на потоковую запись: вы передаёте готовые access
 units и codec configuration, а на выходе получаете classic MP4-файл или
