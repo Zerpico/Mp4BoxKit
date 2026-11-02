@@ -142,6 +142,7 @@ public sealed class Mp4FragmentedWriter : Mp4Writer
         if (previousSamples.Count > 0 && previousSamples[^1].HasExplicitDuration &&
             dts != checked(previousSamples[^1].Dts + previousSamples[^1].Duration))
             FlushFragment();
+        _pending.ResolvePreviousDuration(track, dts);
         if (_boundaryPolicy.ShouldFlush(_pending, TrackList, track, dts, flags))
             FlushFragment();
         if (data.Length > Options.MaxFragmentBytes - _pending.PayloadBytes ||
@@ -166,6 +167,7 @@ public sealed class Mp4FragmentedWriter : Mp4Writer
         if (previousSamples.Count > 0 && previousSamples[^1].HasExplicitDuration &&
             dts != checked(previousSamples[^1].Dts + previousSamples[^1].Duration))
             await FlushFragmentAsync(cancellationToken).ConfigureAwait(false);
+        _pending.ResolvePreviousDuration(track, dts);
         if (_boundaryPolicy.ShouldFlush(_pending, TrackList, track, dts, flags))
             await FlushFragmentAsync(cancellationToken).ConfigureAwait(false);
         if (data.Length > Options.MaxFragmentBytes - _pending.PayloadBytes ||
@@ -188,6 +190,7 @@ public sealed class Mp4FragmentedWriter : Mp4Writer
         if (previousSamples.Count > 0 && previousSamples[^1].HasExplicitDuration &&
             dts != checked(previousSamples[^1].Dts + previousSamples[^1].Duration))
             FlushFragment();
+        _pending.ResolvePreviousDuration(track, dts);
         if (_boundaryPolicy.ShouldFlush(_pending, TrackList, track, dts, flags))
             FlushFragment();
         if (data.Length > Options.MaxFragmentBytes - _pending.PayloadBytes ||
@@ -213,6 +216,7 @@ public sealed class Mp4FragmentedWriter : Mp4Writer
         if (previousSamples.Count > 0 && previousSamples[^1].HasExplicitDuration &&
             dts != checked(previousSamples[^1].Dts + previousSamples[^1].Duration))
             await FlushFragmentAsync(cancellationToken).ConfigureAwait(false);
+        _pending.ResolvePreviousDuration(track, dts);
         if (_boundaryPolicy.ShouldFlush(_pending, TrackList, track, dts, flags))
             await FlushFragmentAsync(cancellationToken).ConfigureAwait(false);
         if (data.Length > Options.MaxFragmentBytes - _pending.PayloadBytes ||
