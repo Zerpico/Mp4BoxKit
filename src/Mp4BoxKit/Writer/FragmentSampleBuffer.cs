@@ -11,6 +11,13 @@ internal sealed class FragmentSampleBuffer
     public IReadOnlyList<List<PendingSample>> Tracks => _tracks;
     public bool HasSamples => _tracks.Any(samples => samples.Count != 0);
 
+    public void ResolvePreviousDuration(TrackId id, long nextDts)
+    {
+        var samples = _tracks[(int)id.Value - 1];
+        if (samples.Count != 0 && !samples[^1].HasExplicitDuration)
+            samples[^1].Duration = checked((int)(nextDts - samples[^1].Dts));
+    }
+
     public void EnsureTracks(int count)
     {
         while (_tracks.Count < count)
