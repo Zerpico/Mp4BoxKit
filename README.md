@@ -1,8 +1,9 @@
 ﻿# Mp4BoxKit
 [![Tests](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/Zerpico/518ad0fd699b8452a77db65cb2d7565b/raw/tests-badge.json)](https://github.com/Zerpico/Mp4BoxKit/actions)
+[![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/Zerpico/518ad0fd699b8452a77db65cb2d7565b/raw/coverage-badge.json)](https://github.com/Zerpico/Mp4BoxKit/actions)
 [![nuget](https://img.shields.io/nuget/v/Mp4BoxKit.svg)](https://www.nuget.org/packages/Mp4BoxKit/)  
 [![CI](https://github.com/Zerpico/Mp4BoxKit/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/Zerpico/Mp4BoxKit/actions/workflows/ci.yml)  
-[![Publish NuGet](https://github.com/Zerpico/Mp4BoxKit/actions/workflows/publish.yml/badge.svg?branch=master)](https://github.com/Zerpico/Mp4BoxKit/actions/workflows/publish.yml)
+[![Release](https://github.com/Zerpico/Mp4BoxKit/actions/workflows/release.yml/badge.svg?branch=master)](https://github.com/Zerpico/Mp4BoxKit/actions/workflows/release.yml)
 
 Простая и лёгкая .NET-библиотека для чтения, записи и инспекции MP4/fMP4. Она рассчитана на потоковую запись: вы передаёте готовые access
 units и codec configuration, а на выходе получаете classic MP4-файл или
