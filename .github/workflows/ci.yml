@@ -94,10 +94,24 @@ jobs:
           --results-directory test-results
 
       - name: Publish Test Results
+        id: test-results
         uses: EnricoMi/publish-unit-test-result-action@v2
-        if: always()
+        if: always()   # публикуем даже если тесты упали
         with:
           files: test-results/**/*.trx
           check_name: Test Results (${{ matrix.name }})
-          comment_mode: off
-          job_summary: true
+          comment_mode: off     # комментарий в PR не нужен
+          job_summary: true     # сводка на странице запуска workflow (Actions -> run -> Summary)
+          json_file: test-results/test-results.json  # Сохраняем JSON для плашки
+
+      # Генерируем и обновляем плашку только на master ветке и только для одного проекта, 
+      - name: Create Test Badge
+        if: matrix.name == 'core' && github.ref == 'refs/heads/master' && always()
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_SECRET }}
+          gistID: ${{ secrets.GIST_ID }}  # ← ID вашего публичного Gist
+          filename: tests-badge.json
+          label: Tests
+          message: "${{ fromJSON(steps.test-results.outputs.json).passed }} passing"
+          color: green
