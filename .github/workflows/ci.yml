@@ -157,7 +157,7 @@ jobs:
         with:
           auth: ${{ secrets.GIST_SECRET }}
           gistID: ${{ vars.GIST_ID }}
-          filename: tests-badge.json
+          filename: tests.json
           label: Tests
           message: "${{ steps.stats.outputs.passed }} passed"
           color: ${{ job.status == 'success' && 'green' || 'red' }}
@@ -168,7 +168,7 @@ jobs:
         with:
           auth: ${{ secrets.GIST_SECRET }}
           gistID: ${{ vars.GIST_ID }}
-          filename: coverage-badge.json
+          filename: coverage.json
           label: Coverage
           message: "${{ steps.stats.outputs.coverage }}%"
           color: ${{ steps.stats.outputs.coverage_color }}

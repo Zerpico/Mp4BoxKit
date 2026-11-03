@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  checks: write
   id-token: write
 
 concurrency:
@@ -41,10 +42,17 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
       - name: Test
-        run: >
-          dotnet test Mp4BoxKit.slnx -c Release
-          --logger "trx;LogFileName=results.trx"
-          --results-directory test-results
+        run: |
+          set -e
+          for p in tests/*/*.csproj; do
+            name=$(basename "$p" .csproj)
+            echo "::group::$name"
+            dotnet test "$p" -c Release \
+              --logger "console;verbosity=normal" \
+              --logger "trx;LogFileName=$name.trx" \
+              --results-directory test-results
+            echo "::endgroup::"
+          done
 
       - name: Publish Test Results
         if: always()
