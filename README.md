@@ -295,3 +295,5 @@ dotnet restore Mp4BoxKit.slnx
 dotnet build Mp4BoxKit.slnx -c Release
 dotnet test Mp4BoxKit.slnx -c Release
 ```
+
+[![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/Zerpico/518ad0fd699b8452a77db65cb2d7565b/raw/coverage-badge.json)](https://github.com/Zerpico/Mp4BoxKit/actions)
