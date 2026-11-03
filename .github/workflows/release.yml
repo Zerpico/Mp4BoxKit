@@ -6,6 +6,10 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Тег релиза для публикации в NuGet (например v1.0.2)"
+        required: true
 
 permissions:
   contents: write
@@ -23,7 +27,7 @@ env:
 jobs:
   draft:
     name: Build and draft release
-    if: github.event_name != 'release'
+    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -65,7 +69,7 @@ jobs:
 
   nuget:
     name: Publish to NuGet
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -76,9 +80,10 @@ jobs:
       - name: Download package from release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
         run: |
           mkdir -p artifacts
-          gh release download "${{ github.event.release.tag_name }}" --pattern "*.nupkg" --dir artifacts
+          gh release download "$TAG" --repo "${{ github.repository }}" --pattern "*.nupkg" --dir artifacts
           ls -l artifacts
 
       - name: Verify NUGET_USER secret
