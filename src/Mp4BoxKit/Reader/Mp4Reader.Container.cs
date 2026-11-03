@@ -45,11 +45,12 @@ public sealed partial class Mp4Reader
 
     private async ValueTask ReadFtypAsync(BoxHeader header, CancellationToken cancellationToken)
     {
+        _containerInput.ValidatePayloadAvailable(header.PayloadSize);
         var length = (int)Math.Min(header.PayloadSize, 64 * 1024);
         var bytes = new byte[length];
         if (await _input.ReadAtLeastAsync(bytes, bytes.Length, cancellationToken)
                 .ConfigureAwait(false) != bytes.Length)
-            return;
+            throw new Mp4FormatException("Truncated ftyp payload.");
         if (bytes.Length >= 4)
             _info.MajorBrand = new FourCc(BigEndian.U32(bytes));
         if (header.PayloadSize > (ulong)bytes.Length)
@@ -61,10 +62,8 @@ public sealed partial class Mp4Reader
     {
         if (header.PayloadSize > (ulong)_options.MaxMetadataBytes)
             throw new Mp4FormatException("Metadata exceeds configured limit.");
-        var bytes = new byte[(int)header.PayloadSize];
-        if (await _input.ReadAtLeastAsync(bytes, bytes.Length, cancellationToken)
-                .ConfigureAwait(false) != bytes.Length)
-            return;
+        var bytes = await ReadPayloadAsync(header.PayloadSize, cancellationToken)
+            .ConfigureAwait(false);
         ContainsMvex = Mp4MetadataParser.Parse(bytes, _info.Tracks);
         _fragmentParser.ReadMovieDefaults(bytes);
     }

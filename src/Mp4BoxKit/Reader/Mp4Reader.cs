@@ -1,5 +1,4 @@
-﻿using Mp4BoxKit.Reader.Metadata;
-using Mp4BoxKit.Reader.Classic;
+﻿using Mp4BoxKit.Reader.Classic;
 using Mp4BoxKit.Reader.Fragments;
 using Mp4BoxKit.Reader;
 
@@ -11,12 +10,12 @@ namespace Mp4BoxKit;
 /// </summary>
 public sealed partial class Mp4Reader
 {
-    private readonly ClassicSampleTableParser _classicTables = new();
+    private readonly ClassicSampleTableParser _classicTables;
     private readonly ClassicSampleIndexBuilder _classicIndexBuilder;
     private readonly ClassicIndexLoader _classicIndexLoader;
     private readonly ClassicSampleSeeker _classicSeeker = new();
     private readonly ClassicSampleDataReader _classicDataReader;
-    private readonly FragmentParser _fragmentParser = new();
+    private readonly FragmentParser _fragmentParser;
     private readonly FragmentSampleCursor _fragmentCursor = new();
     private readonly Stream _stream;
     private readonly Mp4ProbeOptions _options;
@@ -33,6 +32,13 @@ public sealed partial class Mp4Reader
     {
         _stream = input ?? throw new ArgumentNullException(nameof(input));
         _options = options ?? new();
+        if (_options.MaxMetadataBytes <= 0)
+            throw new ArgumentOutOfRangeException(nameof(options), "Metadata limit must be positive.");
+        if (_options.MaxBoxPayloadBytes <= 0)
+            throw new ArgumentOutOfRangeException(nameof(options), "Box payload limit must be positive.");
+
+        _classicTables = new ClassicSampleTableParser(_options);
+        _fragmentParser = new FragmentParser(_options);
         _input = new InputBuffer(_stream);
         _classicIndexBuilder = new ClassicSampleIndexBuilder(_classicTables);
         _classicDataReader = new ClassicSampleDataReader(_stream);

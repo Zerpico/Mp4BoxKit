@@ -34,9 +34,8 @@ public sealed class IsoBoxReaderTests
         using var stream = new MemoryStream(box);
         var reader = new Mp4Reader(stream);
 
-        var result = await reader.ReadContainerInfoAsync();
-
-        Assert.Equal(ProbeStatus.EndOfStream, result.Status);
+        await Assert.ThrowsAsync<Mp4FormatException>(async () =>
+            await reader.ReadContainerInfoAsync());
         Assert.Empty(reader.Info.Tracks);
     }
 }

@@ -11,7 +11,7 @@ internal sealed class ClassicIndexLoader(
         var position = stream.Position;
         try
         {
-            stream.Position = 0;
+            input.Seek(0);
             while (true)
             {
                 var header = await input.ReadHeaderAsync(cancellationToken).ConfigureAwait(false);
@@ -31,7 +31,7 @@ internal sealed class ClassicIndexLoader(
         }
         finally
         {
-            stream.Position = position;
+            input.Seek(position);
         }
     }
 }

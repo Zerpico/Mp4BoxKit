@@ -2,7 +2,7 @@
 
 namespace Mp4BoxKit.Reader.Fragments;
 
-internal sealed class FragmentParser
+internal sealed class FragmentParser(Mp4ProbeOptions options)
 {
     private readonly Dictionary<uint, (uint Duration, uint Size, uint Flags)> _defaults = new();
 
@@ -35,7 +35,8 @@ internal sealed class FragmentParser
     }
 
     public List<FragmentTrack> Parse(ReadOnlySpan<byte> moof, int? mediaPayloadOffset = null, long moofStart = 0)
-        => TrackFragmentParser.Parse(moof, _defaults, mediaPayloadOffset ?? checked(moof.Length + 16), moofStart);
+        => TrackFragmentParser.Parse(moof, _defaults, mediaPayloadOffset ?? checked(moof.Length + 16), moofStart,
+            new SampleMetadataBudget(options.MaxMetadataBytes));
 
     private static class TrackFragmentParser
     {
@@ -47,7 +48,7 @@ internal sealed class FragmentParser
 
         public static List<FragmentTrack> Parse(ReadOnlySpan<byte> moof,
             IReadOnlyDictionary<uint, (uint Duration, uint Size, uint Flags)> defaults,
-            int mediaPayloadOffset, long moofStart)
+            int mediaPayloadOffset, long moofStart, SampleMetadataBudget budget)
         {
             var result = new List<FragmentTrack>();
             var mediaOffset = 0;
@@ -63,7 +64,7 @@ internal sealed class FragmentParser
                 var track = ParseTrackFragment(
                     payload,
                     mediaPayloadOffset,
-                    ref mediaOffset, defaults, moofStart, result.Count == 0);
+                    ref mediaOffset, defaults, moofStart, result.Count == 0, budget);
                 if (track is not null)
                 {
                     result.Add(track);
@@ -78,7 +79,7 @@ internal sealed class FragmentParser
             int mediaPayloadOffset,
             ref int mediaOffset,
             IReadOnlyDictionary<uint, (uint Duration, uint Size, uint Flags)> defaults,
-            long moofStart, bool firstTrack)
+            long moofStart, bool firstTrack, SampleMetadataBudget budget)
         {
             uint trackId = 0;
             uint tfhdFlags = 0;
@@ -148,7 +149,7 @@ internal sealed class FragmentParser
                         defaultFlags,
                         baseOffset, firstRun,
                         ref mediaOffset,
-                        samples);
+                        samples, budget);
                     firstRun = false;
                 }
             }
@@ -245,13 +246,22 @@ internal sealed class FragmentParser
             uint defaultFlags,
             long baseOffset, bool firstRun,
             ref int mediaOffset,
-            List<FragmentSample> samples)
+            List<FragmentSample> samples, SampleMetadataBudget budget)
         {
             if (payload.Length < 8)
                 throw new Mp4FormatException("Truncated trun header.");
 
             var flags = BigEndian.U32(payload[0..]) & 0x00ffffff;
             var count = BigEndian.U32(payload[4..]);
+            var perSampleBytes = ((flags & 0x100) != 0 ? 4 : 0)
+                + ((flags & 0x200) != 0 ? 4 : 0)
+                + ((flags & 0x400) != 0 ? 4 : 0)
+                + ((flags & 0x800) != 0 ? 4 : 0);
+            var requiredBytes = 8L + ((flags & 1) != 0 ? 4 : 0)
+                + ((flags & 4) != 0 ? 4 : 0) + (long)count * perSampleBytes;
+            if (requiredBytes > payload.Length)
+                throw new Mp4FormatException("Truncated trun sample table.");
+            budget.Reserve(count, SampleMetadataBudget.FragmentSampleBytes);
             var offset = 8;
 
             var runOffset = firstRun ? checked((int)baseOffset) : mediaOffset;
