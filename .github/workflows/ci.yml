@@ -76,14 +76,20 @@ jobs:
         run: dotnet tool install --global dotnet-coverage
 
       - name: Test
-        run: >
-          dotnet coverage collect
-          -f cobertura
-          -o test-results/coverage.cobertura.xml
-          'dotnet test Mp4BoxKit.slnx -c Release
-          --logger "console;verbosity=normal"
-          --logger "trx;LogFileName=results.trx"
-          --results-directory test-results'
+        run: |
+          dotnet coverage collect -f cobertura -o test-results/coverage.cobertura.xml \
+            bash -c '
+              set -e
+              for p in tests/*/*.csproj; do
+                name=$(basename "$p" .csproj)
+                echo "::group::$name"
+                dotnet test "$p" -c Release \
+                  --logger "console;verbosity=normal" \
+                  --logger "trx;LogFileName=$name.trx" \
+                  --results-directory test-results
+                echo "::endgroup::"
+              done
+            '
 
       - name: Publish Test Results
         id: test-results
