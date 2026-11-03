@@ -9,10 +9,10 @@ on:
 
 permissions:
   contents: read
+  checks: write
 
 concurrency:
   group: ci-${{ github.ref }}
-  # На PR отменяем устаревшие запуски, на master — нет, чтобы не прервать публикацию.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -79,7 +79,6 @@ jobs:
             **/*.csproj
             NuGet.Config
 
-      # FFmpeg-тесты запускают CLI ffmpeg, а не только используют нативные библиотеки.
       - name: Install FFmpeg CLI
         if: matrix.name == 'ffmpeg'
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
@@ -94,59 +93,11 @@ jobs:
           --logger "trx;LogFileName=results.trx"
           --results-directory test-results
 
-      - name: Upload test results
+      - name: Publish Test Results
+        uses: EnricoMi/publish-unit-test-result-action@v2
         if: always()
-        uses: actions/upload-artifact@v4
         with:
-          name: test-results-${{ matrix.name }}
-          path: test-results
-          if-no-files-found: ignore
-          retention-days: 7
-
-  publish:
-    name: Publish NuGet
-    needs: [build, test]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: nuget-package
-          path: artifacts
-
-      - name: Verify NUGET_USER secret
-        env:
-          NUGET_USER: ${{ secrets.NUGET_USER }}
-        run: |
-          if [ -z "$NUGET_USER" ]; then
-            echo "::error::Secret NUGET_USER не задан. Добавьте имя пользователя nuget.org в Settings -> Secrets and variables -> Actions."
-            exit 1
-          fi
-
-      # Обменивает OIDC-токен GitHub на временный API-ключ nuget.org (живёт 1 час).
-      - name: NuGet login (OIDC -> temp API key)
-        id: login
-        uses: NuGet/login@v1
-        with:
-          user: ${{ secrets.NUGET_USER }}
-
-      - name: Push to nuget.org
-        env:
-          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
-        run: |
-          if [ -z "$NUGET_API_KEY" ]; then
-            echo "::error::Не удалось получить временный ключ NuGet. Проверьте политику Trusted Publishing на nuget.org."
-            exit 1
-          fi
-          dotnet nuget push artifacts/*.nupkg \
-            --source https://api.nuget.org/v3/index.json \
-            --api-key "$NUGET_API_KEY" \
-            --skip-duplicate
+          files: test-results/**/*.trx
+          check_name: Test Results (${{ matrix.name }})
+          comment_mode: off
+          job_summary: true
