@@ -77,19 +77,23 @@ jobs:
 
       - name: Test
         run: |
-          dotnet coverage collect -f cobertura -o test-results/coverage.cobertura.xml \
-            bash -c '
-              set -e
-              for p in tests/*/*.csproj; do
-                name=$(basename "$p" .csproj)
-                echo "::group::$name"
-                dotnet test "$p" -c Release \
-                  --logger "console;verbosity=normal" \
-                  --logger "trx;LogFileName=$name.trx" \
-                  --results-directory test-results
-                echo "::endgroup::"
-              done
-            '
+          set -e
+          for p in tests/*/*.csproj; do
+            name=$(basename "$p" .csproj)
+            echo "::group::$name"
+            dotnet coverage collect \
+              -f cobertura \
+              -o "test-results/$name.cobertura.xml" \
+              dotnet test "$p" -c Release \
+                --logger "console;verbosity=normal" \
+                --logger "trx;LogFileName=$name.trx" \
+                --results-directory test-results
+            echo "::endgroup::"
+          done
+
+      - name: Merge coverage
+        if: always()
+        run: dotnet coverage merge -f cobertura -o test-results/coverage.cobertura.xml test-results/*.cobertura.xml
 
       - name: Publish Test Results
         id: test-results
