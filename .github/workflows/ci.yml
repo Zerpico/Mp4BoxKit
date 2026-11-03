@@ -109,8 +109,21 @@ jobs:
         if: always() && hashFiles('code-coverage-results.md') != ''
         run: cat code-coverage-results.md >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Check badge configuration
+        id: badge
+        if: github.ref == 'refs/heads/master' && vars.GIST_ID != ''
+        env:
+          GIST_SECRET: ${{ secrets.GIST_SECRET }}
+        run: |
+          if [ -n "$GIST_SECRET" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::GIST_SECRET не задан — бейдж пропущен"
+          fi
+
       - name: Test badge
-        if: github.ref == 'refs/heads/master' && vars.GIST_ID != '' && secrets.GIST_SECRET != ''
+        if: steps.badge.outputs.enabled == 'true'
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
           auth: ${{ secrets.GIST_SECRET }}
