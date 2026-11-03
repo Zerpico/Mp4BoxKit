@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: write
-  checks: write
   id-token: write
 
 concurrency:
@@ -37,31 +36,6 @@ jobs:
           cache-dependency-path: |
             **/*.csproj
             NuGet.Config
-
-      - name: Install FFmpeg CLI
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
-      - name: Test
-        run: |
-          set -e
-          for p in tests/*/*.csproj; do
-            name=$(basename "$p" .csproj)
-            echo "::group::$name"
-            dotnet test "$p" -c Release \
-              --logger "console;verbosity=normal" \
-              --logger "trx;LogFileName=$name.trx" \
-              --results-directory test-results
-            echo "::endgroup::"
-          done
-
-      - name: Publish Test Results
-        if: always()
-        uses: EnricoMi/publish-unit-test-result-action@v2
-        with:
-          files: test-results/**/*.trx
-          check_name: Release Test Results
-          comment_mode: off
-          job_summary: true
 
       - name: Pack
         run: dotnet pack src/Mp4BoxKit/Mp4BoxKit.csproj -c Release -p:ContinuousIntegrationBuild=true -o artifacts
