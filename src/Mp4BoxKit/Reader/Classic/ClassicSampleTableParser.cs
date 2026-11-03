@@ -1,30 +1,29 @@
 ﻿using Mp4BoxKit.Boxes;
 using Mp4BoxKit.Reader.Metadata;
-using Mp4BoxKit.Reader.Classic;
 
 namespace Mp4BoxKit.Reader.Classic;
 
-internal sealed class ClassicSampleTableParser
+internal sealed class ClassicSampleTableParser(Mp4ProbeOptions options)
 {
     public List<ClassicTrack> ParseTracks(
         ReadOnlySpan<byte> moov)
     {
         var tracks = new List<ClassicTrack>();
+        var budget = new SampleMetadataBudget(options.MaxMetadataBytes);
         var offset = 0;
 
         while (TryReadChild(moov, ref offset, out var type, out var payload))
         {
             if (type == BoxTypes.Trak)
             {
-                tracks.Add(ParseClassicTrack(payload));
+                tracks.Add(ParseClassicTrack(payload, budget));
             }
         }
 
         return tracks;
     }
 
-    private static ClassicTrack ParseClassicTrack(
-        ReadOnlySpan<byte> trak)
+    private static ClassicTrack ParseClassicTrack(ReadOnlySpan<byte> trak, SampleMetadataBudget budget)
     {
         var metadata = Mp4MetadataParser.ParseTrackMetadata(trak);
         var track = new ClassicTrack
@@ -37,44 +36,38 @@ internal sealed class ClassicSampleTableParser
         {
             if (type == BoxTypes.Mdia)
             {
-                ParseClassicMedia(payload, track);
+                ParseClassicMedia(payload, track, budget);
             }
         }
 
         return track;
     }
 
-    private static void ParseClassicMedia(
-        ReadOnlySpan<byte> mdia,
-        ClassicTrack track)
+    private static void ParseClassicMedia(ReadOnlySpan<byte> mdia, ClassicTrack track, SampleMetadataBudget budget)
     {
         var offset = 0;
         while (TryReadChild(mdia, ref offset, out var type, out var payload))
         {
             if (type == BoxTypes.Minf)
             {
-                ParseClassicMinf(payload, track);
+                ParseClassicMinf(payload, track, budget);
             }
         }
     }
 
-    private static void ParseClassicMinf(
-        ReadOnlySpan<byte> minf,
-        ClassicTrack track)
+    private static void ParseClassicMinf(ReadOnlySpan<byte> minf, ClassicTrack track, SampleMetadataBudget budget)
     {
         var offset = 0;
         while (TryReadChild(minf, ref offset, out var type, out var payload))
         {
             if (type == BoxTypes.Stbl)
             {
-                ParseClassicSampleTable(payload, track);
+                ParseClassicSampleTable(payload, track, budget);
             }
         }
     }
 
-    private static void ParseClassicSampleTable(
-        ReadOnlySpan<byte> stbl,
-        ClassicTrack track)
+    private static void ParseClassicSampleTable(ReadOnlySpan<byte> stbl, ClassicTrack track, SampleMetadataBudget budget)
     {
         var offset = 0;
         while (TryReadChild(stbl, ref offset, out var type, out var payload))
@@ -91,7 +84,7 @@ internal sealed class ClassicSampleTableParser
                     ParseSampleToChunk(payload, track);
                     break;
                 case var value when value == BoxTypes.Stsz:
-                    ParseSampleSizes(payload, track);
+                    ParseSampleSizes(payload, track, budget);
                     break;
                 case var value when value == BoxTypes.Stco:
                     ParseChunkOffsets(payload, track, false);
@@ -106,9 +99,7 @@ internal sealed class ClassicSampleTableParser
         }
     }
 
-    private static void ParseTimeToSample(
-        ReadOnlySpan<byte> payload,
-        ClassicTrack track)
+    private static void ParseTimeToSample(ReadOnlySpan<byte> payload, ClassicTrack track)
     {
         if (payload.Length < 8)
         {
@@ -126,9 +117,7 @@ internal sealed class ClassicSampleTableParser
         }
     }
 
-    private static void ParseCompositionOffsets(
-        ReadOnlySpan<byte> payload,
-        ClassicTrack track)
+    private static void ParseCompositionOffsets(ReadOnlySpan<byte> payload, ClassicTrack track)
     {
         if (payload.Length < 8)
         {
@@ -148,9 +137,7 @@ internal sealed class ClassicSampleTableParser
         }
     }
 
-    private static void ParseSampleToChunk(
-        ReadOnlySpan<byte> payload,
-        ClassicTrack track)
+    private static void ParseSampleToChunk(ReadOnlySpan<byte> payload, ClassicTrack track)
     {
         if (payload.Length < 8)
         {
@@ -168,25 +155,25 @@ internal sealed class ClassicSampleTableParser
         }
     }
 
-    private static void ParseSampleSizes(
-        ReadOnlySpan<byte> payload,
-        ClassicTrack track)
+    private static void ParseSampleSizes(ReadOnlySpan<byte> payload, ClassicTrack track, SampleMetadataBudget budget)
     {
         if (payload.Length < 12)
         {
-            return;
+            throw new Mp4FormatException("Truncated stsz header.");
         }
 
         var uniformSize = BigEndian.U32(payload[4..]);
         var count = BigEndian.U32(payload[8..]);
+        if (uniformSize == 0 && count > (payload.Length - 12) / 4)
+            throw new Mp4FormatException("Truncated stsz sample sizes.");
+
+        budget.Reserve(count, SampleMetadataBudget.ClassicSampleBytes);
         var offset = 12;
         for (var i = 0; i < count; i++)
         {
             var size = uniformSize != 0
                 ? uniformSize
-                : offset + 4 <= payload.Length
-                    ? BigEndian.U32(payload[offset..])
-                    : 0;
+                : BigEndian.U32(payload[offset..]);
             track.SampleSizes.Add(size);
             if (uniformSize == 0)
             {
@@ -195,10 +182,7 @@ internal sealed class ClassicSampleTableParser
         }
     }
 
-    private static void ParseChunkOffsets(
-        ReadOnlySpan<byte> payload,
-        ClassicTrack track,
-        bool wide)
+    private static void ParseChunkOffsets(ReadOnlySpan<byte> payload, ClassicTrack track, bool wide)
     {
         if (payload.Length < 8)
         {
@@ -217,9 +201,7 @@ internal sealed class ClassicSampleTableParser
         }
     }
 
-    private static void ParseSyncSamples(
-        ReadOnlySpan<byte> payload,
-        ClassicTrack track)
+    private static void ParseSyncSamples(ReadOnlySpan<byte> payload, ClassicTrack track)
     {
         if (payload.Length < 8)
         {
@@ -280,9 +262,7 @@ internal sealed class ClassicSampleTableParser
         return result;
     }
 
-    private static int FindChunkRun(
-        List<(uint FirstChunk, uint SamplesPerChunk)> runs,
-        uint chunk)
+    private static int FindChunkRun(List<(uint FirstChunk, uint SamplesPerChunk)> runs, uint chunk)
     {
         for (var i = runs.Count - 1; i >= 0; i--)
         {
@@ -295,9 +275,7 @@ internal sealed class ClassicSampleTableParser
         return 0;
     }
 
-    private static int DurationAt(
-        List<(uint Count, uint Duration)> runs,
-        int sampleIndex)
+    private static int DurationAt(List<(uint Count, uint Duration)> runs, int sampleIndex)
     {
         foreach (var run in runs)
         {
@@ -312,9 +290,7 @@ internal sealed class ClassicSampleTableParser
         return 0;
     }
 
-    private static int OffsetAt(
-        List<(uint Count, int Offset)> runs,
-        int sampleIndex)
+    private static int OffsetAt(List<(uint Count, int Offset)> runs, int sampleIndex)
     {
         foreach (var run in runs)
         {
@@ -329,9 +305,7 @@ internal sealed class ClassicSampleTableParser
         return 0;
     }
 
-    public (int Offset, int Length) FindTopLevelBox(
-        ReadOnlySpan<byte> file,
-        FourCc wanted)
+    public (int Offset, int Length) FindTopLevelBox(ReadOnlySpan<byte> file, FourCc wanted)
     {
         var offset = 0;
         while (TryReadChild(file, ref offset, out var type, out var payload))

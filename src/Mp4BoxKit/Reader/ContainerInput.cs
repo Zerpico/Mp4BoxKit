@@ -20,35 +20,56 @@ internal sealed class ContainerInput(InputBuffer input)
         var size = BigEndian.U32(_header);
         var type = new FourCc(BigEndian.U32(_header.AsSpan(4)));
         if (size != 1)
+        {
             return new BoxHeader(size, type, 8);
-        if (await input.ReadAtLeastAsync(_header.AsMemory(8, 8), 8,
-                cancellationToken).ConfigureAwait(false) < 8)
+        }
+
+        if (await input.ReadAtLeastAsync(_header.AsMemory(8, 8), 8, cancellationToken).ConfigureAwait(false) < 8)
+        {
             return new BoxHeader(0, default, 0);
+        }
+
         return new BoxHeader(BigEndian.U64(_header.AsSpan(8)), type, 16);
     }
 
-    public async ValueTask<byte[]> ReadPayloadAsync(ulong size,
-        CancellationToken cancellationToken)
+    public async ValueTask<byte[]> ReadPayloadAsync(ulong size, CancellationToken cancellationToken)
     {
+        ValidatePayloadAvailable(size);
         if (size > int.MaxValue)
+        {
             throw new Mp4FormatException(
                 "Box payload is too large for the current streaming reader.");
+        }
+
         var payload = new byte[(int)size];
-        if (await input.ReadAtLeastAsync(payload, payload.Length,
-                cancellationToken).ConfigureAwait(false) != payload.Length)
-            throw new EndOfStreamException();
+
+        if (await input.ReadAtLeastAsync(payload, payload.Length, cancellationToken)
+                .ConfigureAwait(false) != payload.Length)
+        {
+            throw new Mp4FormatException("Truncated box payload.");
+        }
         return payload;
+    }
+
+    public void ValidatePayloadAvailable(ulong size)
+    {
+        if (input.CanSeek && (input.Position > input.Length ||
+            size > (ulong)(input.Length - input.Position)))
+        {
+            throw new Mp4FormatException("Truncated box payload.");
+        }
     }
 
     public async ValueTask SkipAsync(ulong bytes, CancellationToken cancellationToken)
     {
+        ValidatePayloadAvailable(bytes);
         while (bytes != 0)
         {
             var requested = (int)Math.Min((ulong)_skipBuffer.Length, bytes);
             var read = await input.ReadAsync(_skipBuffer.AsMemory(0, requested),
                 cancellationToken).ConfigureAwait(false);
             if (read == 0)
-                return;
+                throw new Mp4FormatException("Truncated box payload while skipping.");
             bytes -= (ulong)read;
         }
     }

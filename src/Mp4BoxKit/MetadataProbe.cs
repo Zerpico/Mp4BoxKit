@@ -1,9 +1,8 @@
-﻿using Mp4BoxKit.Reader.Metadata;
-
-namespace Mp4BoxKit;
+﻿namespace Mp4BoxKit;
 
 public sealed class Mp4ProbeOptions
 {
+    /// <summary> Maximum metadata payload and budget for expanded sample records </summary>
     public long MaxMetadataBytes { get; init; } = 64 * 1024 * 1024;
 
     /// <summary>Maximum payload of a fragment box read into memory.</summary>
