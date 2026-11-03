@@ -127,6 +127,17 @@ jobs:
           passed=$(grep -ho 'passed="[0-9]*"' test-results/*.trx 2>/dev/null | grep -o '[0-9]*' | awk '{s+=$1} END {print s+0}')
           echo "passed=$passed" >> "$GITHUB_OUTPUT"
 
+          rate=$(grep -o 'line-rate="[0-9.]*"' test-results/coverage.cobertura.xml 2>/dev/null | head -n1 | grep -o '[0-9.]*' || true)
+          if [ -n "$rate" ]; then
+            pct=$(awk -v r="$rate" 'BEGIN { printf "%.1f", r*100 }')
+            color=$(awk -v p="$pct" 'BEGIN { if (p>=80) print "green"; else if (p>=60) print "yellow"; else print "red" }')
+          else
+            pct="n/a"
+            color="lightgrey"
+          fi
+          echo "coverage=$pct" >> "$GITHUB_OUTPUT"
+          echo "coverage_color=$color" >> "$GITHUB_OUTPUT"
+
       - name: Check badge configuration
         id: badge
         if: always() && github.ref == 'refs/heads/master' && vars.GIST_ID != ''
@@ -150,3 +161,14 @@ jobs:
           label: Tests
           message: "${{ steps.stats.outputs.passed }} passed"
           color: ${{ job.status == 'success' && 'green' || 'red' }}
+
+      - name: Coverage badge
+        if: always() && steps.badge.outputs.enabled == 'true' && hashFiles('test-results/coverage.cobertura.xml') != ''
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_SECRET }}
+          gistID: ${{ vars.GIST_ID }}
+          filename: coverage-badge.json
+          label: Coverage
+          message: "${{ steps.stats.outputs.coverage }}%"
+          color: ${{ steps.stats.outputs.coverage_color }}
