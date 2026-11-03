@@ -1,10 +1,10 @@
 name: CI
 
 on:
-  push:
-    branches: [master]
   pull_request:
-    branches: [master]
+    branches: [master, develop]
+  push:
+    branches: [master, develop, "release/**"]
   workflow_dispatch:
 
 permissions:
@@ -47,6 +47,7 @@ jobs:
         run: dotnet pack src/Mp4BoxKit/Mp4BoxKit.csproj -c Release --no-build -p:ContinuousIntegrationBuild=true -o artifacts
 
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
         with:
           name: nuget-package
           path: artifacts/*.nupkg
@@ -54,20 +55,10 @@ jobs:
           retention-days: 7
 
   test:
-    name: Test (${{ matrix.name }})
+    name: Test
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: core
-            project: tests/Mp4BoxKit.Tests/Mp4BoxKit.Tests.csproj
-          - name: inspection
-            project: tests/Mp4BoxKit.Inspection.Tests/Mp4BoxKit.Inspection.Tests.csproj
-          - name: ffmpeg
-            project: tests/Mp4BoxKit.FFmpeg.Tests/Mp4BoxKit.FFmpeg.Tests.csproj
     steps:
       - uses: actions/checkout@v4
 
@@ -80,37 +71,74 @@ jobs:
             NuGet.Config
 
       - name: Install FFmpeg CLI
-        if: matrix.name == 'ffmpeg'
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: Restore
-        run: dotnet restore ${{ matrix.project }}
+      - name: Install coverage collector
+        run: dotnet tool install --global dotnet-coverage
 
       - name: Test
-        run: >
-          dotnet test ${{ matrix.project }} -c Release --no-restore
-          --logger "console;verbosity=normal"
-          --logger "trx;LogFileName=results.trx"
-          --results-directory test-results
+        run: |
+          set -e
+          for p in tests/*/*.csproj; do
+            name=$(basename "$p" .csproj)
+            echo "::group::$name"
+            dotnet coverage collect \
+              -f cobertura \
+              -o "test-results/$name.cobertura.xml" \
+              dotnet test "$p" -c Release \
+                --logger "console;verbosity=normal" \
+                --logger "trx;LogFileName=$name.trx" \
+                --results-directory test-results
+            echo "::endgroup::"
+          done
+
+      - name: Merge coverage
+        if: always()
+        run: dotnet coverage merge -f cobertura -o test-results/coverage.cobertura.xml test-results/*.cobertura.xml
 
       - name: Publish Test Results
         id: test-results
+        if: always()
         uses: EnricoMi/publish-unit-test-result-action@v2
-        if: always()   # публикуем даже если тесты упали
         with:
           files: test-results/**/*.trx
-          check_name: Test Results (${{ matrix.name }})
-          comment_mode: off     # комментарий в PR не нужен
-          job_summary: true     # сводка на странице запуска workflow (Actions -> run -> Summary)
-          json_file: test-results/test-results.json  # Сохраняем JSON для плашки
+          check_name: Test Results
+          comment_mode: off
+          job_summary: true
+          json_file: test-results/test-results.json
 
-      # Генерируем и обновляем плашку только на master ветке и только для одного проекта, 
-      - name: Create Test Badge
-        if: matrix.name == 'core' && github.ref == 'refs/heads/master' && always()
+      - name: Coverage summary
+        if: always() && hashFiles('test-results/coverage.cobertura.xml') != ''
+        uses: irongut/CodeCoverageSummary@v1.3.0
+        with:
+          filename: test-results/coverage.cobertura.xml
+          badge: true
+          format: markdown
+          output: file
+
+      - name: Append coverage to job summary
+        if: always() && hashFiles('code-coverage-results.md') != ''
+        run: cat code-coverage-results.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check badge configuration
+        id: badge
+        if: github.ref == 'refs/heads/master' && vars.GIST_ID != ''
+        env:
+          GIST_SECRET: ${{ secrets.GIST_SECRET }}
+        run: |
+          if [ -n "$GIST_SECRET" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::GIST_SECRET не задан — бейдж пропущен"
+          fi
+
+      - name: Test badge
+        if: steps.badge.outputs.enabled == 'true'
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
           auth: ${{ secrets.GIST_SECRET }}
-          gistID: ${{ secrets.GIST_ID }}  # ← ID вашего публичного Gist
+          gistID: ${{ vars.GIST_ID }}
           filename: tests-badge.json
           label: Tests
           message: "${{ fromJSON(steps.test-results.outputs.json).passed }} passing"
