@@ -53,6 +53,25 @@ public sealed class AacAdtsTests
         Assert.False(AacAdts.TryParse(multipleBlocks, out _));
     }
 
+    [Theory]
+    [InlineData(13)]
+    [InlineData(14)]
+    [InlineData(15)]
+    public void RejectsReservedAndExplicitFrequencyIndices(int frequencyIndex)
+    {
+        var frame = CreateFrame(new byte[9], frequencyIndex: frequencyIndex);
+        Assert.False(AacAdts.TryParse(frame, out var header));
+        Assert.Equal(default, header);
+    }
+
+    [Fact]
+    public void AcceptsLastDefinedFrequencyIndex()
+    {
+        var frame = CreateFrame(new byte[9], frequencyIndex: 12);
+        Assert.True(AacAdts.TryParse(frame, out var header));
+        Assert.Equal(7350, header.SampleRate);
+    }
+
     private static byte[] CreateFrame(
         byte[] payload,
         int frequencyIndex = 3,
