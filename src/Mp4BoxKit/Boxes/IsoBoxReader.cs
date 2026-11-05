@@ -10,6 +10,8 @@ internal ref struct IsoBoxReader
 
     public IsoBoxReader(ReadOnlySpan<byte> data, int offset = 0)
     {
+        if ((uint)offset > (uint)data.Length)
+            throw new ArgumentOutOfRangeException(nameof(offset));
         _data = data;
         _offset = offset;
     }
@@ -23,10 +25,10 @@ internal ref struct IsoBoxReader
         type = default;
         payload = default;
 
-        if (_offset > _data.Length - 8)
-        {
+        if (_offset == _data.Length)
             return false;
-        }
+        if (_offset > _data.Length - 8)
+            throw new Mp4FormatException("Truncated child box header.");
 
         var size = BigEndian.U32(_data[_offset..]);
         type = new FourCc(BigEndian.U32(_data[(_offset + 4)..]));
@@ -37,7 +39,7 @@ internal ref struct IsoBoxReader
         {
             if (_offset > _data.Length - 16)
             {
-                return false;
+                throw new Mp4FormatException("Truncated extended child box header.");
             }
 
             headerSize = 16;
@@ -48,7 +50,7 @@ internal ref struct IsoBoxReader
             actualSize > (ulong)(_data.Length - _offset) ||
             actualSize > int.MaxValue)
         {
-            return false;
+            throw new Mp4FormatException("Invalid child box size or extent.");
         }
 
         var payloadLength = checked((int)actualSize - headerSize);

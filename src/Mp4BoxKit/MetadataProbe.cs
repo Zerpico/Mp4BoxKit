@@ -2,12 +2,18 @@
 
 public sealed class Mp4ProbeOptions
 {
+    /// <summary> Allows the sample reader to discard fragments with invalid moof metadata </summary>
+    public bool SkipInvalidFragments { get; init; }
+
     /// <summary> Maximum metadata payload and budget for expanded sample records </summary>
     public long MaxMetadataBytes { get; init; } = 64 * 1024 * 1024;
 
     /// <summary>Maximum payload of a fragment box read into memory.</summary>
     public long MaxBoxPayloadBytes { get; init; } = 256 * 1024 * 1024;
 }
+
+/// <summary>A fragment discarded during explicitly enabled recovery.</summary>
+public readonly record struct SkippedFragmentInfo(long Offset, string Reason);
 
 public readonly record struct ContainerProbeResult(
     ProbeStatus Status,
