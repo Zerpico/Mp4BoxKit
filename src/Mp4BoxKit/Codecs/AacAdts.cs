@@ -30,8 +30,8 @@ public static class AacAdts
 
         var audioObjectType = ((frame[2] >> 6) & 3) + 1;
         var frequencyIndex = (frame[2] >> 2) & 0xF;
-        if (frequencyIndex == 0xF)
-            return false; // explicit frequency is not represented in ADTS
+        if (frequencyIndex >= 0xD)
+            return false; // 0xD/0xE are reserved; explicit frequency is not represented in ADTS
 
         var channelConfiguration =
             ((frame[2] & 1) << 2) | ((frame[3] >> 6) & 3);

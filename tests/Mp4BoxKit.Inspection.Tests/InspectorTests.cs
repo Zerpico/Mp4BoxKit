@@ -106,6 +106,30 @@ public sealed class InspectorTests
         Assert.Equal(10_000, options.MaxBoxes);
     }
 
+    [Fact]
+    public void TrexReportsAllDefaultsAtTheirCorrectOffsets()
+    {
+        var bytes = CreateFragmentedFile();
+        var payload = bytes.AsSpan().IndexOf("trex"u8) + 4;
+        // Distinct values ensure adjacent fields cannot accidentally pass the test.
+        uint[] values = { 1, 2, 1024, 123, 0x02000000 };
+        for (var i = 0; i < values.Length; i++)
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(
+                bytes.AsSpan(payload + 4 + i * 4), values[i]);
+
+        var inspection = Mp4Inspector.Inspect(bytes, "trex.mp4");
+        var moov = Assert.Single(inspection.Boxes, box => box.Type == "moov");
+        var mvex = Assert.Single(moov.Children, box => box.Type == "mvex");
+        var trex = Assert.Single(mvex.Children, box => box.Type == "trex");
+        string[] names = { "trackId", "defaultSampleDescriptionIndex", "defaultSampleDuration",
+            "defaultSampleSize", "defaultSampleFlags" };
+        for (var i = 0; i < names.Length; i++)
+        {
+            var field = Assert.Single(trex.Fields, field => field.Name == names[i]);
+            Assert.Equal(values[i].ToString(System.Globalization.CultureInfo.InvariantCulture), field.Value);
+        }
+    }
+
     private static byte[] CreateFragmentedFile()
     {
         using var output = new MemoryStream();
