@@ -12,23 +12,21 @@ namespace Mp4BoxKit.Codecs;
 /// </summary>
 public static class AvcConfiguration
 {
+    private enum AvcNalType : byte { Sps = 7, Pps = 8 }
+
     /// <summary>
     /// Builds an avcC payload from one SPS NAL unit and one PPS NAL unit.
     /// The NAL units must not contain Annex B start codes.
     /// </summary>
-    public static ReadOnlyMemory<byte> CreateFromSpsPps(
-        ReadOnlySpan<byte> sps,
-        ReadOnlySpan<byte> pps)
+    public static ReadOnlyMemory<byte> CreateFromSpsPps(ReadOnlySpan<byte> sps, ReadOnlySpan<byte> pps)
     {
-        ValidateParameterSet(sps, expectedType: 7, nameof(sps));
-        ValidateParameterSet(pps, expectedType: 8, nameof(pps));
+        ValidateParameterSet(sps, AvcNalType.Sps, nameof(sps));
+        ValidateParameterSet(pps, AvcNalType.Pps, nameof(pps));
         if (sps.Length < 4)
-            throw new ArgumentException(
-                "SPS is too short to contain profile, compatibility and level bytes.", nameof(sps));
+            throw new ArgumentException("SPS is too short to contain profile, compatibility and level bytes.", nameof(sps));
 
         var highProfile = IsHighProfile(sps[1]);
-        var result = new byte[checked(6 + 2 + sps.Length + 1 + 2 + pps.Length +
-            (highProfile ? 4 : 0))];
+        var result = new byte[checked(6 + 2 + sps.Length + 1 + 2 + pps.Length + (highProfile ? 4 : 0))];
         result[0] = 1; // configurationVersion
         result[1] = sps[1]; // AVCProfileIndication
         result[2] = sps[2]; // profile_compatibility
@@ -41,8 +39,7 @@ public static class AvcConfiguration
 
         var offset = 8 + sps.Length;
         result[offset] = 1; // one PPS
-        BinaryPrimitives.WriteUInt16BigEndian(
-            result.AsSpan(offset + 1), checked((ushort)pps.Length));
+        BinaryPrimitives.WriteUInt16BigEndian(result.AsSpan(offset + 1), checked((ushort)pps.Length));
         pps.CopyTo(result.AsSpan(offset + 3));
 
         if (highProfile)
@@ -53,9 +50,7 @@ public static class AvcConfiguration
     /// <summary>
     /// Builds an avcC payload from multiple SPS and PPS NAL units.
     /// </summary>
-    public static ReadOnlyMemory<byte> CreateFromSpsPps(
-        IReadOnlyList<ReadOnlyMemory<byte>> sps,
-        IReadOnlyList<ReadOnlyMemory<byte>> pps)
+    public static ReadOnlyMemory<byte> CreateFromSpsPps(IReadOnlyList<ReadOnlyMemory<byte>> sps, IReadOnlyList<ReadOnlyMemory<byte>> pps)
     {
         ArgumentNullException.ThrowIfNull(sps);
         ArgumentNullException.ThrowIfNull(pps);
@@ -64,21 +59,20 @@ public static class AvcConfiguration
         if (pps.Count is 0 or > 255)
             throw new ArgumentOutOfRangeException(nameof(pps), "avcC supports between 1 and 255 PPS entries.");
         if (sps[0].Length < 4)
-            throw new ArgumentException(
-                "SPS is too short to contain profile, compatibility and level bytes.", nameof(sps));
+            throw new ArgumentException("SPS is too short to contain profile, compatibility and level bytes.", nameof(sps));
 
         var highProfile = IsHighProfile(sps[0].Span[1]);
         var size = 6;
         foreach (var item in sps)
         {
-            ValidateParameterSet(item.Span, expectedType: 7, nameof(sps));
+            ValidateParameterSet(item.Span, AvcNalType.Sps, nameof(sps));
             size = checked(size + 2 + item.Length);
         }
 
         size = checked(size + 1);
         foreach (var item in pps)
         {
-            ValidateParameterSet(item.Span, expectedType: 8, nameof(pps));
+            ValidateParameterSet(item.Span, AvcNalType.Pps, nameof(pps));
             size = checked(size + 2 + item.Length);
         }
 
@@ -96,8 +90,7 @@ public static class AvcConfiguration
         var offset = 6;
         foreach (var item in sps)
         {
-            BinaryPrimitives.WriteUInt16BigEndian(
-                result.AsSpan(offset), checked((ushort)item.Length));
+            BinaryPrimitives.WriteUInt16BigEndian(result.AsSpan(offset), checked((ushort)item.Length));
             offset += 2;
             item.Span.CopyTo(result.AsSpan(offset));
             offset += item.Length;
@@ -106,8 +99,7 @@ public static class AvcConfiguration
         result[offset++] = (byte)pps.Count;
         foreach (var item in pps)
         {
-            BinaryPrimitives.WriteUInt16BigEndian(
-                result.AsSpan(offset), checked((ushort)item.Length));
+            BinaryPrimitives.WriteUInt16BigEndian(result.AsSpan(offset), checked((ushort)item.Length));
             offset += 2;
             item.Span.CopyTo(result.AsSpan(offset));
             offset += item.Length;
@@ -118,8 +110,7 @@ public static class AvcConfiguration
         return result;
     }
 
-    internal static int GetNalLengthSize(ReadOnlySpan<byte> avcC)
-        => (avcC[4] & 3) + 1;
+    internal static int GetNalLengthSize(ReadOnlySpan<byte> avcC) => (avcC[4] & 3) + 1;
 
     internal static void Validate(ReadOnlySpan<byte> avcC)
     {
@@ -130,8 +121,7 @@ public static class AvcConfiguration
 
         var lengthSize = (avcC[4] & 3) + 1;
         if (lengthSize == 3)
-            throw new ArgumentException(
-                "avcC lengthSizeMinusOne=2 (3-byte NAL lengths) is not allowed by ISO-BMFF.");
+            throw new ArgumentException("avcC lengthSizeMinusOne=2 (3-byte NAL lengths) is not allowed by ISO-BMFF.");
 
         var spsCount = avcC[5] & 0x1F;
         if (spsCount == 0)
@@ -169,25 +159,22 @@ public static class AvcConfiguration
     {
         if (offset > data.Length - 2)
             throw new ArgumentException($"Truncated avcC {name} length.");
+
         var length = BinaryPrimitives.ReadUInt16BigEndian(data[offset..]);
         offset += 2;
         if (length == 0 || length > data.Length - offset)
             throw new ArgumentException($"Invalid avcC {name} length.");
+
         return offset + length;
     }
 
-    private static void ValidateParameterSet(
-        ReadOnlySpan<byte> nal,
-        int expectedType,
-        string parameterName)
+    private static void ValidateParameterSet(ReadOnlySpan<byte> nal, AvcNalType expectedType, string parameterName)
     {
         if (nal.IsEmpty)
             throw new ArgumentException("Parameter set NAL unit is empty.", parameterName);
         var type = nal[0] & 0x1F;
-        if (type != expectedType)
-            throw new ArgumentException(
-                $"Expected H.264 NAL type {expectedType}, got {type}. Pass a raw SPS/PPS NAL unit without start codes.",
-                parameterName);
+        if (type != (int)expectedType)
+            throw new ArgumentException($"Expected H.264 NAL type {(byte)expectedType} ({expectedType}), got {type}. Pass a raw SPS/PPS NAL unit without start codes.", parameterName);
         if (nal.Length > ushort.MaxValue)
             throw new ArgumentException("Parameter set NAL unit is too large for avcC.", parameterName);
     }

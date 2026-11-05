@@ -106,7 +106,7 @@ H.264/H.265 samples — это length-prefixed NAL units, а не Annex B. Дл�
 ```csharp
 writer.WriteSample(
     video,
-    AvcSample.FromAnnexB(annexB),
+    NalSampleConverter.FromAnnexB(annexB, Codec.H264),
     pts,
     dts,
     SampleFlags.KeyFrame);

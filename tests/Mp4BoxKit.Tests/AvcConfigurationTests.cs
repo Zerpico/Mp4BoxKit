@@ -47,12 +47,12 @@ public sealed class AvcConfigurationTests
     [Fact]
     public void FromNalUnitsFiltersParameterSets()
     {
-        var sample = AvcSample.FromNalUnits(new[]
+        var sample = NalSampleConverter.FromNalUnits(new[]
         {
             TestMedia.RawSps,
             TestMedia.RawPps,
             new ReadOnlyMemory<byte>(new byte[] { 0x65, 0x88 })
-        });
+        }, Codec.H264);
 
         Assert.Equal(new byte[] { 0, 0, 0, 2, 0x65, 0x88 }, sample.ToArray());
     }
@@ -60,12 +60,12 @@ public sealed class AvcConfigurationTests
     [Fact]
     public void FromAnnexBFiltersParameterSets()
     {
-        var sample = AvcSample.FromAnnexB(new byte[]
+        var sample = NalSampleConverter.FromAnnexB(new byte[]
         {
             0, 0, 0, 1, 0x67, 0x42, 0x00, 0x1E,
             0, 0, 1, 0x68,
             0, 0, 0, 1, 0x65, 0x88
-        });
+        }, Codec.H264);
 
         Assert.Equal(new byte[] { 0, 0, 0, 2, 0x65, 0x88 }, sample.ToArray());
     }
@@ -91,8 +91,8 @@ public sealed class AvcConfigurationTests
         output.Position = 0;
         var sample = await new Mp4Reader(output).ReadSampleAsync();
         Assert.NotNull(sample);
-        Assert.Equal(AvcSample.FromNalUnits(
-            new[] { TestMedia.RawSps, TestMedia.RawPps, idr }).ToArray(),
+        Assert.Equal(NalSampleConverter.FromNalUnits(
+            new[] { TestMedia.RawSps, TestMedia.RawPps, idr }, Codec.H264).ToArray(),
             sample.Data.ToArray());
     }
 
@@ -117,8 +117,9 @@ public sealed class AvcConfigurationTests
         output.Position = 0;
         var sample = await new Mp4Reader(output).ReadSampleAsync();
         Assert.NotNull(sample);
-        Assert.Equal(AvcSample.FromNalUnits(
+        Assert.Equal(NalSampleConverter.FromNalUnits(
             new[] { TestMedia.RawSps, TestMedia.RawPps, idr },
+            Codec.H264,
             includeParameterSets: true).ToArray(),
             sample.Data.ToArray());
     }
@@ -128,12 +129,12 @@ public sealed class AvcConfigurationTests
     {
         var configuration = AvcConfiguration.CreateFromSpsPps(
             TestMedia.RawSps.Span, TestMedia.RawPps.Span);
-        var accessUnit = AvcSample.FromNalUnits(new[]
+        var accessUnit = NalSampleConverter.FromNalUnits(new[]
         {
             TestMedia.RawSps,
             TestMedia.RawPps,
             new ReadOnlyMemory<byte>(new byte[] { 0x65, 0x88 })
-        }, includeParameterSets: true);
+        }, Codec.H264, includeParameterSets: true);
 
         using var output = new MemoryStream();
         using (var writer = new Mp4FragmentedWriter(new StreamMp4Output(output)))

@@ -4,15 +4,15 @@ namespace Mp4BoxKit.Codecs;
 
 public static class HvcConfiguration
 {
-    private enum NalType : byte { Vps = 32, Sps = 33, Pps = 34 }
+    private enum HevcNalType : byte { Vps = 32, Sps = 33, Pps = 34 }
 
     /// <summary>Creates an hvcC payload from HEVC parameter NAL units without start codes.</summary>
     public static ReadOnlyMemory<byte> CreateFromParameterSets(
         ReadOnlySpan<byte> vps, ReadOnlySpan<byte> sps, ReadOnlySpan<byte> pps)
     {
-        ValidateParameterSet(vps, NalType.Vps);
-        ValidateParameterSet(sps, NalType.Sps);
-        ValidateParameterSet(pps, NalType.Pps);
+        ValidateParameterSet(vps, HevcNalType.Vps);
+        ValidateParameterSet(sps, HevcNalType.Sps);
+        ValidateParameterSet(pps, HevcNalType.Pps);
         var rbsp = new List<byte>();
         var zeros = 0;
         foreach (var b in sps[2..])
@@ -73,19 +73,19 @@ public static class HvcConfiguration
         result[22] = 3;
         var offset = 23;
 
-        WriteParameterSet(result, ref offset, NalType.Vps, vps);
-        WriteParameterSet(result, ref offset, NalType.Sps, sps);
-        WriteParameterSet(result, ref offset, NalType.Pps, pps);
+        WriteParameterSet(result, ref offset, HevcNalType.Vps, vps);
+        WriteParameterSet(result, ref offset, HevcNalType.Sps, sps);
+        WriteParameterSet(result, ref offset, HevcNalType.Pps, pps);
         return result;
     }
 
-    private static void ValidateParameterSet(ReadOnlySpan<byte> nal, NalType type)
+    private static void ValidateParameterSet(ReadOnlySpan<byte> nal, HevcNalType type)
     {
         if (nal.Length < 2 || nal.Length > ushort.MaxValue || ((nal[0] >> 1) & 63) != (int)type)
             throw new ArgumentException($"Expected a {type} NAL unit without a start code.");
     }
 
-    private static void WriteParameterSet(Span<byte> output, ref int offset, NalType type, ReadOnlySpan<byte> nal)
+    private static void WriteParameterSet(Span<byte> output, ref int offset, HevcNalType type, ReadOnlySpan<byte> nal)
     {
         output[offset++] = (byte)(0x80 | (byte)type);
         BinaryPrimitives.WriteUInt16BigEndian(output[offset..], 1);

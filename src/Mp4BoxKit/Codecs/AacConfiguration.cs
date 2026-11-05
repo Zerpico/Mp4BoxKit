@@ -17,26 +17,19 @@ public static class AacConfiguration
     /// Builds a two- or five-byte AudioSpecificConfig for AAC-LC
     /// (or another GA object type in the range 1..4).
     /// </summary>
-    public static ReadOnlyMemory<byte> CreateAudioSpecificConfig(
-        int sampleRate,
-        int channels,
-        int audioObjectType = 2)
+    public static ReadOnlyMemory<byte> CreateAudioSpecificConfig(int sampleRate, int channels, int audioObjectType = 2)
     {
         if (sampleRate <= 0)
             throw new ArgumentOutOfRangeException(nameof(sampleRate));
         if (channels is < 1 or > 7)
-            throw new NotSupportedException(
-                "AAC channel configurations above 7 require a Program Config Element.");
+            throw new NotSupportedException("AAC channel configurations above 7 require a Program Config Element.");
         if (audioObjectType is < 1 or > 4)
-            throw new NotSupportedException(
-                "Only AAC GA object types 1..4 are supported by the minimal builder.");
+            throw new NotSupportedException("Only AAC GA object types 1..4 are supported by the minimal builder.");
 
         var frequencyIndex = Array.IndexOf(SamplingFrequencies, sampleRate);
         return frequencyIndex >= 0
-            ? CreateAudioSpecificConfigFromIndices(
-                audioObjectType, frequencyIndex, channels)
-            : CreateAudioSpecificConfigFromIndices(
-                audioObjectType, 0xF, channels, sampleRate);
+            ? CreateAudioSpecificConfigFromIndices(audioObjectType, frequencyIndex, channels)
+            : CreateAudioSpecificConfigFromIndices(audioObjectType, 0xF, channels, sampleRate);
     }
 
     internal static ReadOnlyMemory<byte> CreateAudioSpecificConfigFromIndices(
@@ -46,11 +39,9 @@ public static class AacConfiguration
         int explicitSampleRate = -1)
     {
         if (audioObjectType is < 1 or > 4)
-            throw new NotSupportedException(
-                "Only AAC GA object types 1..4 are supported by the minimal builder.");
+            throw new NotSupportedException("Only AAC GA object types 1..4 are supported by the minimal builder.");
         if (channelConfiguration is < 1 or > 7)
-            throw new NotSupportedException(
-                "AAC channel configurations above 7 require a Program Config Element.");
+            throw new NotSupportedException("AAC channel configurations above 7 require a Program Config Element.");
 
         var bits = new List<bool>();
         Write(bits, audioObjectType, 5);
@@ -63,8 +54,7 @@ public static class AacConfiguration
         }
         else if (explicitSampleRate >= 0)
         {
-            throw new ArgumentException(
-                "Explicit sample rate is only valid with frequency index 15.");
+            throw new ArgumentException("Explicit sample rate is only valid with frequency index 15.");
         }
 
         Write(bits, channelConfiguration, 4);
@@ -93,19 +83,16 @@ public static class AacConfiguration
         int sampleRate,
         int channels,
         int audioObjectType = 2)
-        => CreateEsdsFromAudioSpecificConfig(
-            CreateAudioSpecificConfig(sampleRate, channels, audioObjectType).Span);
+        => CreateEsdsFromAudioSpecificConfig(CreateAudioSpecificConfig(sampleRate, channels, audioObjectType).Span);
 
     /// <summary>
     /// Wraps an existing AudioSpecificConfig (for example encoder extradata)
     /// into an esds payload.
     /// </summary>
-    public static ReadOnlyMemory<byte> CreateEsdsFromAudioSpecificConfig(
-        ReadOnlySpan<byte> audioSpecificConfig)
+    public static ReadOnlyMemory<byte> CreateEsdsFromAudioSpecificConfig(ReadOnlySpan<byte> audioSpecificConfig)
     {
         if (audioSpecificConfig.IsEmpty)
-            throw new ArgumentException(
-                "AudioSpecificConfig is empty.", nameof(audioSpecificConfig));
+            throw new ArgumentException("AudioSpecificConfig is empty.", nameof(audioSpecificConfig));
 
         var decoderSpecific = Descriptor(0x05, audioSpecificConfig.ToArray());
         var decoderConfig = Descriptor(0x04, new byte[]
