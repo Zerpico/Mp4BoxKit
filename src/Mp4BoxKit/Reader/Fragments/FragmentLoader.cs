@@ -38,6 +38,7 @@ internal sealed class FragmentLoader(
                 var continuation = input.Position;
                 var seekable = new FragmentReaderState();
                 seekable.Tracks.AddRange(parser.Parse(moof, 0, moofStart));
+                ValidateMediaBudget(seekable.Tracks);
                 using var media = new MemoryStream();
                 try
                 {
@@ -89,12 +90,11 @@ internal sealed class FragmentLoader(
             if (mdat.Value.PayloadSize > (ulong)options.MaxBoxPayloadBytes)
                 throw new Mp4FormatException("Fragment mdat exceeds configured payload limit.");
             var mediaPayloadOffset = checked((int)(input.Position - moofStart));
-            var state = new FragmentReaderState
-            {
-                Media = await input.ReadPayloadAsync(mdat.Value.PayloadSize,
-                    cancellationToken).ConfigureAwait(false)
-            };
+            var state = new FragmentReaderState();
             state.Tracks.AddRange(parser.Parse(moof, mediaPayloadOffset, moofStart));
+            ValidateMediaBudget(state.Tracks);
+            state.Media = await input.ReadPayloadAsync(mdat.Value.PayloadSize,
+                cancellationToken).ConfigureAwait(false);
             foreach (var fragmentTrack in state.Tracks)
                 foreach (var sample in fragmentTrack.Samples)
                     if (sample.DataOffset < 0 || sample.Size < 0 ||
@@ -105,6 +105,19 @@ internal sealed class FragmentLoader(
             if (state.Tracks.Count != 0)
                 return state;
         }
+    }
+
+    private void ValidateMediaBudget(IReadOnlyList<FragmentTrack> tracks)
+    {
+        // Offsets into the materialized media buffer are represented by int.
+        var remaining = Math.Min(options.MaxBoxPayloadBytes, Array.MaxLength);
+        foreach (var track in tracks)
+            foreach (var sample in track.Samples)
+            {
+                if (sample.Size < 0 || sample.Size > remaining)
+                    throw new Mp4FormatException("Fragment media exceeds configured payload limit.");
+                remaining -= sample.Size;
+            }
     }
 
     private void ApplyDecodeTimes(FragmentReaderState state, IReadOnlyList<MediaTrackInfo> tracks)
