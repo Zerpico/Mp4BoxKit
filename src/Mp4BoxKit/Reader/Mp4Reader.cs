@@ -45,11 +45,15 @@ public sealed partial class Mp4Reader
         _containerInput = new ContainerInput(_input);
         _classicIndexLoader = new ClassicIndexLoader(_stream, _containerInput,
             _classicIndexBuilder, _options);
-        _fragmentLoader = new FragmentLoader(_containerInput, _fragmentParser, _options);
+        _fragmentLoader = new FragmentLoader(_containerInput, _fragmentParser, _options,
+            info => FragmentSkipped?.Invoke(info));
         _fragmentSeeker = new FragmentSeeker(_stream, _input, _fragmentLoader);
     }
 
     public ContainerInfo Info => _info;
+
+    /// <summary> Reports discarded fragments when SkipInvalidFragments is enabled </summary>
+    public event Action<SkippedFragmentInfo>? FragmentSkipped;
 
     /// <summary>
     /// Moves the next-sample position to the requested presentation time.
