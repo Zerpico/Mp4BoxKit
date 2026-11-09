@@ -46,7 +46,7 @@ public sealed partial class Mp4Reader
         _classicIndexLoader = new ClassicIndexLoader(_stream, _containerInput,
             _classicIndexBuilder, _options);
         _fragmentLoader = new FragmentLoader(_containerInput, _fragmentParser, _options,
-            info => FragmentSkipped?.Invoke(info));
+            info => FragmentSkipped?.Invoke(info), ReadFragmentMovieAsync);
         _fragmentSeeker = new FragmentSeeker(_stream, _input, _fragmentLoader);
     }
 
@@ -406,67 +406,30 @@ public sealed partial class Mp4Reader
         return count;
     }
 
-    /// <summary>Reads successive fMP4 samples without seeking; callback data is valid for the call.</summary>
+    private async ValueTask ReadFragmentMovieAsync(BoxHeader header, CancellationToken ct)
+    {
+        await ReadMoovAsync(header, ct).ConfigureAwait(false);
+        _seenMoov = true;
+        _info.IsFragmented = ContainsMvex;
+    }
+
+    /// <summary>Reads one fMP4 fragment per call; callback data is valid for the call.</summary>
     [Obsolete("Use ReadSampleAsync or ReadSamplesAsync for format-independent reading.")]
     public async ValueTask<int> ReadFragmentSamplesAsync(SampleHandler handler, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(handler);
-        while (true)
-        {
-            var header = await ReadHeaderAsync(ct).ConfigureAwait(false);
-            if (header is null)
+        var state = await _fragmentLoader.ReadNextAsync(_info.Tracks, ct).ConfigureAwait(false);
+        if (state is null)
+            return 0;
+        var count = 0;
+        foreach (var track in state.Tracks)
+            foreach (var sample in track.Samples)
             {
-                return 0;
+                var info = new SampleInfo(new TrackId(track.TrackId), sample.Pts,
+                    sample.Dts, sample.Duration, sample.Flags);
+                handler(in info, state.Media.AsSpan(sample.DataOffset, sample.Size));
+                count++;
             }
-
-            if (header.Value.Type == BoxTypes.Moov)
-            {
-                await ReadMoovAsync(header.Value, ct).ConfigureAwait(false);
-                _seenMoov = true;
-                _info.IsFragmented = ContainsMvex;
-                continue;
-            }
-
-            if (header.Value.Type != BoxTypes.Moof)
-            {
-                await SkipAsync(header.Value.PayloadSize, ct).ConfigureAwait(false);
-                continue;
-            }
-
-            var moof = await ReadPayloadAsync(header.Value.PayloadSize, ct).ConfigureAwait(false);
-            var fragment = ParseFragment(moof);
-            var mdat = await ReadHeaderAsync(ct).ConfigureAwait(false);
-            if (mdat is null || mdat.Value.Type != BoxTypes.Mdat)
-            {
-                return -1;
-            }
-
-            var media = await ReadPayloadAsync(mdat.Value.PayloadSize, ct)
-                .ConfigureAwait(false);
-            var offset = 0;
-            foreach (var track in fragment)
-            {
-                foreach (var sample in track.Samples)
-                {
-                    if (sample.Size > media.Length - offset)
-                    {
-                        throw new Mp4FormatException("trun sample exceeds mdat payload.");
-                    }
-
-                    var info = new SampleInfo(
-                        new TrackId(track.TrackId),
-                        sample.Pts,
-                        sample.Dts,
-                        sample.Duration,
-                        sample.Flags);
-                    handler(in info, media.AsSpan(offset, sample.Size));
-                    offset += sample.Size;
-                }
-            }
-            return fragment.Sum(static x => x.Samples.Count);
-        }
+        return count;
     }
-
-    private List<FragmentTrack> ParseFragment(ReadOnlySpan<byte> moof)
-        => _fragmentParser.Parse(moof);
 }

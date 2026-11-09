@@ -4,7 +4,8 @@ internal sealed class FragmentLoader(
     ContainerInput input,
     FragmentParser parser,
     Mp4ProbeOptions options,
-    Action<SkippedFragmentInfo> fragmentSkipped)
+    Action<SkippedFragmentInfo> fragmentSkipped,
+    Func<BoxHeader, CancellationToken, ValueTask> readMovie)
 {
     private bool _decodeTimeUnknown;
     private readonly Dictionary<uint, long> _decodeEnds = new();
@@ -43,6 +44,11 @@ internal sealed class FragmentLoader(
             var header = await input.ReadHeaderAsync(cancellationToken).ConfigureAwait(false);
             if (header is null)
                 return null;
+            if (header.Value.Type == BoxTypes.Moov)
+            {
+                await readMovie(header.Value, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
             if (header.Value.Type != BoxTypes.Moof)
             {
                 await input.SkipAsync(header.Value.PayloadSize, cancellationToken)
