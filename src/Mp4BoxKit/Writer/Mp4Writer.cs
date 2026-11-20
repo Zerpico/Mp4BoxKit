@@ -495,7 +495,8 @@ public abstract class Mp4Writer : IDisposable, IAsyncDisposable
 
     /// <summary>
     /// Moves a sample whose DTS does not increase to the previous DTS + 1 tick when
-    /// the step back is within <paramref name="maxCorrection"/>.
+    /// the step back is within <paramref name="maxCorrection"/>. PTS is raised only
+    /// when it would otherwise precede the corrected DTS.
     /// </summary>
     protected void CorrectDecodeTime(TrackId track, ref long pts, ref long dts, TimeSpan maxCorrection)
     {
@@ -508,9 +509,11 @@ public abstract class Mp4Writer : IDisposable, IAsyncDisposable
         if (last - dts > maxTicks)
             return;
 
-        var delta = checked(last + 1 - dts);
-        dts = checked(dts + delta);
-        pts = checked(pts + delta);
+        // Same rule as ffmpeg: PTS stays put unless it would precede the corrected DTS.
+        var corrected = checked(last + 1);
+        if (pts >= dts)
+            pts = Math.Max(pts, corrected);
+        dts = corrected;
     }
 
     protected void ValidateSampleTiming(TrackId track, long dts, int? duration)
