@@ -41,4 +41,14 @@ public sealed class Mp4FragmentedWriterOptions
 
     public Fmp4FragmentBoundary FragmentBoundary { get; init; }
         = Fmp4FragmentBoundary.EveryKeyFrame;
+
+    /// <summary>Largest backward DTS step that is corrected instead of rejected </summary>
+    public TimeSpan MaxDtsCorrection { get; init; }
+
+    /// <summary>
+    /// When true, a sample whose DTS differs from the end of the previous sample
+    /// written with an explicit duration rewrites that duration to the actual DTS
+    /// difference
+    /// </summary>
+    public bool DurationFollowsDts { get; init; }
 }

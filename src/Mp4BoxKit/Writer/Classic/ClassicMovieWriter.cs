@@ -111,7 +111,7 @@ internal sealed class ClassicMovieWriter
         {
             box.WriteUInt32(0);
             box.WriteUInt32(0);
-            box.WriteUInt32(MovieHeaderWriter.GetHandlerType(track.Type));
+            box.WriteUInt32(CodecRegistry.GetHandlerType(track).Value);
             box.WriteUInt64(0);
             box.WriteUInt32(0);
             box.WriteBytes(System.Text.Encoding.UTF8.GetBytes(

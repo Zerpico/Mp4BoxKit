@@ -19,6 +19,8 @@ public abstract class Mp4Writer : IDisposable, IAsyncDisposable
     protected bool IsCompleted { get; private set; }
     private Exception? _failure;
     private readonly Dictionary<TrackId, long> _lastDecodeTimes = new();
+    private readonly Dictionary<TrackId, int> _timingTolerances = new();
+    private readonly Dictionary<TrackId, long> _explicitEnds = new();
     private bool _tracksLocked;
     protected readonly IMp4Output Output;
     protected readonly List<MediaTrackInfo> TrackList = new();
@@ -106,20 +108,29 @@ public abstract class Mp4Writer : IDisposable, IAsyncDisposable
         if (options.Height is < 0 or > ushort.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(options.Height),
                 "Subtitle height must be between 0 and 65535.");
+        if (options.TimingTolerance < 0)
+            throw new ArgumentOutOfRangeException(nameof(options.TimingTolerance),
+                "Subtitle timing tolerance must not be negative.");
         MediaLanguage.Pack(options.Language);
-        ValidateConfiguration(options.Codec, options.CodecConfiguration, nameof(options));
-        return AddTrack(new SubtitleTrackInfo
+        var configuration = options.Codec == Codec.WebVtt && options.CodecConfiguration.IsEmpty
+            ? WebVttConfiguration.Create()
+            : options.CodecConfiguration;
+        ValidateConfiguration(options.Codec, configuration, nameof(options));
+        var id = AddTrack(new SubtitleTrackInfo
         {
             Id = new((uint)(TrackList.Count + 1)),
             Codec = options.Codec,
             TimeScale = options.TimeScale,
-            CodecConfiguration = options.CodecConfiguration,
+            CodecConfiguration = configuration,
             Width = options.Width,
             Height = options.Height,
             Name = options.Name,
             IsDefault = options.IsDefault,
             Language = options.Language
         });
+        if (options.TimingTolerance > 0)
+            _timingTolerances[id] = options.TimingTolerance;
+        return id;
     }
 
     private static void ValidateTimeScale(uint timeScale)
@@ -178,6 +189,8 @@ public abstract class Mp4Writer : IDisposable, IAsyncDisposable
             AvcConfiguration.Validate(configuration.Span);
         else if (codec == Codec.H265)
             HvcConfiguration.Validate(configuration.Span);
+        else if (codec == Codec.WebVtt)
+            WebVttConfiguration.Validate(configuration.Span);
     }
 
     private (int LengthSize, bool Hevc) GetNalLengthSize(TrackId id)
@@ -274,6 +287,9 @@ public abstract class Mp4Writer : IDisposable, IAsyncDisposable
                 NalUnitSampleValidator.Validate(
                     data, HvcConfiguration.GetNalLengthSize(track.CodecConfiguration.Span),
                     hevc: true);
+                break;
+            case Codec.WebVtt:
+                WebVttSample.Validate(data);
                 break;
         }
     }
@@ -477,6 +493,26 @@ public abstract class Mp4Writer : IDisposable, IAsyncDisposable
     protected void MarkCompleted() => IsCompleted = true;
     protected void MarkFaulted(Exception error) => _failure = error;
 
+    /// <summary>
+    /// Moves a sample whose DTS does not increase to the previous DTS + 1 tick when
+    /// the step back is within <paramref name="maxCorrection"/>.
+    /// </summary>
+    protected void CorrectDecodeTime(TrackId track, ref long pts, ref long dts, TimeSpan maxCorrection)
+    {
+        if (maxCorrection <= TimeSpan.Zero ||
+            !_lastDecodeTimes.TryGetValue(track, out var last) || dts > last)
+            return;
+
+        var timeScale = TrackList[(int)track.Value - 1].TimeScale;
+        var maxTicks = (long)((Int128)maxCorrection.Ticks * timeScale / TimeSpan.TicksPerSecond);
+        if (last - dts > maxTicks)
+            return;
+
+        var delta = checked(last + 1 - dts);
+        dts = checked(dts + delta);
+        pts = checked(pts + delta);
+    }
+
     protected void ValidateSampleTiming(TrackId track, long dts, int? duration)
     {
         if (duration is <= 0)
@@ -487,5 +523,38 @@ public abstract class Mp4Writer : IDisposable, IAsyncDisposable
             throw new ArgumentException("DTS must increase strictly within each track.", nameof(dts));
     }
 
-    protected void RecordDecodeTime(TrackId track, long dts) => _lastDecodeTimes[track] = dts;
+    protected void RecordDecodeTime(TrackId track, long dts, int? duration)
+    {
+        _lastDecodeTimes[track] = dts;
+        if (!_timingTolerances.ContainsKey(track))
+            return;
+        if (duration is { } value)
+            _explicitEnds[track] = checked(dts + value);
+        else
+            _explicitEnds.Remove(track);
+    }
+
+    /// <summary>
+    /// Moves a subtitle sample that slightly overlaps the previous explicitly timed
+    /// sample to that sample's end, keeping its own end. Gaps are left unchanged.
+    /// </summary>
+    protected void ResolveSubtitleOverlap(TrackId track, ref long pts, ref long dts, ref int? duration)
+    {
+        if (!_timingTolerances.TryGetValue(track, out var tolerance) ||
+            !_explicitEnds.TryGetValue(track, out var end) ||
+            dts >= end || end - dts > tolerance || duration is <= 0)
+            return;
+
+        var delta = end - dts;
+        if (duration is { } value)
+        {
+            if (value <= delta)
+                throw new ArgumentException(
+                    $"Subtitle sample at {dts} overlaps the previous sample by {delta} ticks " +
+                    "and has no duration left after the overlap is removed.", nameof(duration));
+            duration = checked((int)(value - delta));
+        }
+        dts = end;
+        pts = checked(pts + delta);
+    }
 }

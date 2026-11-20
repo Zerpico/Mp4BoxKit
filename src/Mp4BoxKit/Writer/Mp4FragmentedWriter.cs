@@ -135,12 +135,12 @@ public sealed class Mp4FragmentedWriter : Mp4Writer
     {
         EnsureTrack(track);
         MapTimestamps(track, ref pts, ref dts);
+        ResolveSubtitleOverlap(track, ref pts, ref dts, ref duration);
+        CorrectDecodeTime(track, ref pts, ref dts, Options.MaxDtsCorrection);
         ValidateSampleTiming(track, dts, duration);
         ValidateSamplePayload(track, data);
         _pending.EnsureTracks(TrackList.Count);
-        var previousSamples = _pending.GetTrack(track);
-        if (previousSamples.Count > 0 && previousSamples[^1].HasExplicitDuration &&
-            dts != checked(previousSamples[^1].Dts + previousSamples[^1].Duration))
+        if (BreaksExplicitTiming(track, dts))
             FlushFragment();
         _pending.ResolvePreviousDuration(track, dts);
         if (_boundaryPolicy.ShouldFlush(_pending, TrackList, track, dts, flags))
@@ -150,7 +150,7 @@ public sealed class Mp4FragmentedWriter : Mp4Writer
             throw FragmentLimitExceeded();
         EnsureHeader();
         _pending.Add(track, data, pts, dts, flags, duration);
-        RecordDecodeTime(track, dts);
+        RecordDecodeTime(track, dts, duration);
     }
 
     public override async ValueTask WriteSampleAsync(TrackId track, ReadOnlyMemory<byte> data,
@@ -160,12 +160,12 @@ public sealed class Mp4FragmentedWriter : Mp4Writer
         cancellationToken.ThrowIfCancellationRequested();
         EnsureTrack(track);
         MapTimestamps(track, ref pts, ref dts);
+        ResolveSubtitleOverlap(track, ref pts, ref dts, ref duration);
+        CorrectDecodeTime(track, ref pts, ref dts, Options.MaxDtsCorrection);
         ValidateSampleTiming(track, dts, duration);
         ValidateSamplePayload(track, data.Span);
         _pending.EnsureTracks(TrackList.Count);
-        var previousSamples = _pending.GetTrack(track);
-        if (previousSamples.Count > 0 && previousSamples[^1].HasExplicitDuration &&
-            dts != checked(previousSamples[^1].Dts + previousSamples[^1].Duration))
+        if (BreaksExplicitTiming(track, dts))
             await FlushFragmentAsync(cancellationToken).ConfigureAwait(false);
         _pending.ResolvePreviousDuration(track, dts);
         if (_boundaryPolicy.ShouldFlush(_pending, TrackList, track, dts, flags))
@@ -175,7 +175,7 @@ public sealed class Mp4FragmentedWriter : Mp4Writer
             throw FragmentLimitExceeded();
         await EnsureHeaderAsync(cancellationToken).ConfigureAwait(false);
         _pending.Add(track, data.Span, pts, dts, flags, duration);
-        RecordDecodeTime(track, dts);
+        RecordDecodeTime(track, dts, duration);
     }
 
     public override void WriteSampleBorrowed(TrackId track, ReadOnlyMemory<byte> data,
@@ -183,12 +183,12 @@ public sealed class Mp4FragmentedWriter : Mp4Writer
     {
         EnsureTrack(track);
         MapTimestamps(track, ref pts, ref dts);
+        ResolveSubtitleOverlap(track, ref pts, ref dts, ref duration);
+        CorrectDecodeTime(track, ref pts, ref dts, Options.MaxDtsCorrection);
         ValidateSampleTiming(track, dts, duration);
         ValidateSamplePayload(track, data.Span);
         _pending.EnsureTracks(TrackList.Count);
-        var previousSamples = _pending.GetTrack(track);
-        if (previousSamples.Count > 0 && previousSamples[^1].HasExplicitDuration &&
-            dts != checked(previousSamples[^1].Dts + previousSamples[^1].Duration))
+        if (BreaksExplicitTiming(track, dts))
             FlushFragment();
         _pending.ResolvePreviousDuration(track, dts);
         if (_boundaryPolicy.ShouldFlush(_pending, TrackList, track, dts, flags))
@@ -198,7 +198,7 @@ public sealed class Mp4FragmentedWriter : Mp4Writer
             throw FragmentLimitExceeded();
         EnsureHeader();
         _pending.AddBorrowed(track, data, pts, dts, flags, duration);
-        RecordDecodeTime(track, dts);
+        RecordDecodeTime(track, dts, duration);
     }
 
     public override async ValueTask WriteSampleBorrowedAsync(TrackId track,
@@ -209,12 +209,12 @@ public sealed class Mp4FragmentedWriter : Mp4Writer
         cancellationToken.ThrowIfCancellationRequested();
         EnsureTrack(track);
         MapTimestamps(track, ref pts, ref dts);
+        ResolveSubtitleOverlap(track, ref pts, ref dts, ref duration);
+        CorrectDecodeTime(track, ref pts, ref dts, Options.MaxDtsCorrection);
         ValidateSampleTiming(track, dts, duration);
         ValidateSamplePayload(track, data.Span);
         _pending.EnsureTracks(TrackList.Count);
-        var previousSamples = _pending.GetTrack(track);
-        if (previousSamples.Count > 0 && previousSamples[^1].HasExplicitDuration &&
-            dts != checked(previousSamples[^1].Dts + previousSamples[^1].Duration))
+        if (BreaksExplicitTiming(track, dts))
             await FlushFragmentAsync(cancellationToken).ConfigureAwait(false);
         _pending.ResolvePreviousDuration(track, dts);
         if (_boundaryPolicy.ShouldFlush(_pending, TrackList, track, dts, flags))
@@ -224,7 +224,7 @@ public sealed class Mp4FragmentedWriter : Mp4Writer
             throw FragmentLimitExceeded();
         await EnsureHeaderAsync(cancellationToken).ConfigureAwait(false);
         _pending.AddBorrowed(track, data, pts, dts, flags, duration);
-        RecordDecodeTime(track, dts);
+        RecordDecodeTime(track, dts, duration);
     }
 
     public override void Complete()
@@ -356,6 +356,20 @@ public sealed class Mp4FragmentedWriter : Mp4Writer
         foreach (var samples in _pending.Tracks)
             foreach (var sample in samples)
                 await Output.WriteAsync(sample.Memory, cancellationToken).ConfigureAwait(false);
+    }
+
+    private bool BreaksExplicitTiming(TrackId track, long dts)
+    {
+        var samples = _pending.GetTrack(track);
+        if (samples.Count == 0 || !samples[^1].HasExplicitDuration)
+            return false;
+        var previous = samples[^1];
+        if (dts == checked(previous.Dts + previous.Duration))
+            return false;
+        if (!Options.DurationFollowsDts)
+            return true;
+        previous.Duration = checked((int)(dts - previous.Dts));
+        return false;
     }
 
     private static InvalidOperationException FragmentLimitExceeded()
