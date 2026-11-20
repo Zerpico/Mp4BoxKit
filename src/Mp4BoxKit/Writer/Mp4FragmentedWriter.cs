@@ -55,9 +55,11 @@ public sealed class Mp4FragmentedWriter : Mp4Writer
         if (Options.TargetFragmentDuration is { } target && target <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(Options.TargetFragmentDuration),
                 "TargetFragmentDuration must be positive.");
-        if (Options.FragmentBoundary == Fmp4FragmentBoundary.KeyFrameAfterTargetDuration &&
+        if (Options.FragmentBoundary is Fmp4FragmentBoundary.KeyFrameAfterTargetDuration
+                or Fmp4FragmentBoundary.TargetDuration &&
             Options.TargetFragmentDuration is null)
-            throw new ArgumentException("KeyFrameAfterTargetDuration requires TargetFragmentDuration.", nameof(Options));
+            throw new ArgumentException(
+                $"{Options.FragmentBoundary} requires TargetFragmentDuration.", nameof(Options));
 
         _boundaryPolicy = new FragmentBoundaryPolicy(Options);
         try
