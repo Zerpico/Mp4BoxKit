@@ -58,6 +58,77 @@ public sealed class FragmentBoundaryTests
     }
 
     [Fact]
+    public void TargetDurationCutsVideoWithoutKeyFrame()
+    {
+        var media = new List<Fmp4Segment>();
+        using var output = new MemoryStream();
+        using (var writer = new Mp4FragmentedWriter(
+            new StreamMp4Output(output),
+            new Mp4FragmentedWriterOptions
+            {
+                FragmentBoundary = Fmp4FragmentBoundary.TargetDuration,
+                TargetFragmentDuration = TimeSpan.FromSeconds(1)
+            },
+            segment => { if (segment.Kind == Fmp4SegmentKind.Media) media.Add(segment); }))
+        {
+            var video = writer.AddVideo(new VideoTrackOptions(
+                Codec.H264, 16, 16, 90_000, TestMedia.AvcC));
+            var audio = writer.AddAudio(new AudioTrackOptions(
+                Codec.Aac, 1, 48_000, CodecConfiguration: TestMedia.Esds));
+            for (var i = 0; i < 10; i++)
+            {
+                writer.WriteSample(video, TestMedia.VideoSample((byte)i, keyFrame: i == 0),
+                    i * 45_000L, i * 45_000L, i == 0 ? SampleFlags.KeyFrame : SampleFlags.None,
+                    duration: 45_000);
+                writer.WriteSample(audio, new byte[] { 0, 1, (byte)i },
+                    i * 24_000L, i * 24_000L, duration: 24_000);
+            }
+            writer.Complete();
+        }
+
+        Assert.Equal(5, media.Count);
+        Assert.All(media, segment => Assert.Equal(4, segment.SampleCount));
+        Assert.True(media[0].StartsWithKeyFrame);
+        Assert.All(media.Skip(1), segment => Assert.False(segment.StartsWithKeyFrame));
+    }
+
+    [Fact]
+    public void TargetDurationDoesNotCutAtEarlyKeyFrame()
+    {
+        var media = new List<Fmp4Segment>();
+        using var output = new MemoryStream();
+        using (var writer = new Mp4FragmentedWriter(
+            new StreamMp4Output(output),
+            new Mp4FragmentedWriterOptions
+            {
+                FragmentBoundary = Fmp4FragmentBoundary.TargetDuration,
+                TargetFragmentDuration = TimeSpan.FromSeconds(1)
+            },
+            segment => { if (segment.Kind == Fmp4SegmentKind.Media) media.Add(segment); }))
+        {
+            var video = writer.AddVideo(new VideoTrackOptions(
+                Codec.H264, 16, 16, 90_000, TestMedia.AvcC));
+            for (var i = 0; i < 4; i++)
+            {
+                writer.WriteSample(video, TestMedia.VideoSample((byte)i), i * 45_000L, i * 45_000L,
+                    SampleFlags.KeyFrame, duration: 45_000);
+            }
+            writer.Complete();
+        }
+
+        Assert.Equal(2, media.Count);
+        Assert.All(media, segment => Assert.Equal(2, segment.SampleCount));
+    }
+
+    [Fact]
+    public void TargetDurationRequiresTarget()
+    {
+        Assert.Throws<ArgumentException>(() => new Mp4FragmentedWriter(
+            new StreamMp4Output(new MemoryStream()),
+            new Mp4FragmentedWriterOptions { FragmentBoundary = Fmp4FragmentBoundary.TargetDuration }));
+    }
+
+    [Fact]
     public void SegmentForceFlushesBeforeSample()
     {
         var media = new List<Fmp4Segment>();

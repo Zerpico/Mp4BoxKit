@@ -16,27 +16,31 @@ internal sealed class FragmentBoundaryPolicy(Mp4FragmentedWriterOptions options)
             return false;
 
         var info = tracks[(int)track.Value - 1];
+        if (info.Type == MediaType.Video &&
+            options.FragmentBoundary == Fmp4FragmentBoundary.TargetDuration)
+            return Reached(buffer, info, dts, options.TargetFragmentDuration!.Value);
+
         if (info.Type == MediaType.Video && (flags & SampleFlags.KeyFrame) != 0)
         {
             if (options.FragmentBoundary == Fmp4FragmentBoundary.EveryKeyFrame ||
                 options.TargetFragmentDuration is not { } videoTarget)
                 return true;
 
-            var videoSamples = buffer.GetTrack(track);
-            if (videoSamples.Count == 0)
-                return false;
-            var videoScale = Math.Max(1u, info.TimeScale);
-            return dts - videoSamples[0].Dts >= videoTarget.TotalSeconds * videoScale;
+            return Reached(buffer, info, dts, videoTarget);
         }
 
-        // If a video track exists, video keyframes own fragment boundaries.
+        // If a video track exists, video samples own fragment boundaries.
         if (tracks.Any(item => item.Type == MediaType.Video))
             return false;
 
-        var samples = buffer.GetTrack(track);
+        return Reached(buffer, info, dts, options.TargetFragmentDuration ?? TimeSpan.FromSeconds(2));
+    }
+
+    private static bool Reached(FragmentSampleBuffer buffer, MediaTrackInfo info, long dts, TimeSpan target)
+    {
+        var samples = buffer.GetTrack(info.Id);
         if (samples.Count == 0)
             return false;
-        var target = options.TargetFragmentDuration ?? TimeSpan.FromSeconds(2);
         var scale = Math.Max(1u, info.TimeScale);
         return dts - samples[0].Dts >= target.TotalSeconds * scale;
     }

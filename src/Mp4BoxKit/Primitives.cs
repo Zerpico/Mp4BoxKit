@@ -75,7 +75,8 @@ public enum Fmp4FragmentBoundary
 {
     EveryKeyFrame,
     KeyFrameAfterTargetDuration,
-    Manual
+    Manual,
+    TargetDuration
 }
 
 public readonly record struct TrackId(uint Value);
