@@ -15,6 +15,7 @@ internal static class CodecConfigurationBoxes
         Codec.EAc3 => new FourCc("dec3"),
         Codec.Dts => new FourCc("ddts"),
         Codec.Vc1 => new FourCc("dvc1"),
+        Codec.WebVtt => BoxTypes.VttC,
         Codec.Aac or Codec.Mp3 or Codec.Mpeg1Audio or
             Codec.Mpeg4Video or Codec.Mpeg2Video => BoxTypes.Esds,
         _ => throw new NotSupportedException(
@@ -27,5 +28,5 @@ internal static class CodecConfigurationBoxes
         type == new FourCc("vvcC") || type == new FourCc("av1C") ||
         type == new FourCc("vpcC") || type == new FourCc("dac3") ||
         type == new FourCc("dec3") || type == new FourCc("ddts") ||
-        type == new FourCc("dvc1");
+        type == new FourCc("dvc1") || type == BoxTypes.VttC;
 }

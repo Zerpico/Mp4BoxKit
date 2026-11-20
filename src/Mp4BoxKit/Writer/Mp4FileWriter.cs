@@ -50,6 +50,7 @@ public sealed class Mp4FileWriter : Mp4Writer
     {
         EnsureTrack(track);
         MapTimestamps(track, ref pts, ref dts);
+        ResolveSubtitleOverlap(track, ref pts, ref dts, ref duration);
         ValidateSampleTiming(track, dts, duration);
         ValidateSamplePayload(track, data);
         if (_samples.Tracks.Count >= track.Value)
@@ -88,7 +89,7 @@ public sealed class Mp4FileWriter : Mp4Writer
                 offset,
                 duration,
                 data.Length);
-            RecordDecodeTime(track, dts);
+            RecordDecodeTime(track, dts, duration);
             if (FastStart)
             {
                 _writeOrder.Add(_samples.Tracks[(int)track.Value - 1][^1]);

@@ -24,7 +24,7 @@ internal sealed class TrackFragmentBox : IWritableBox
         {
             new TrackFragmentHeaderBox(_track).WriteTo(traf);
             new TrackFragmentDecodeTimeBox(_samples[0].Dts).WriteTo(traf);
-            new TrackRunBox(_samples, _dataOffset).WriteTo(traf);
+            new TrackRunBox(_track, _samples, _dataOffset).WriteTo(traf);
         });
     }
 }

@@ -183,6 +183,13 @@ public static class BoxTypes
     public static readonly FourCc Tx3g = new("tx3g");
 
     public static readonly FourCc Wvtt = new("wvtt");
+    public static readonly FourCc VttC = new("vttC");
+    public static readonly FourCc VttCue = new("vttc");
+    public static readonly FourCc VttEmptyCue = new("vtte");
+    public static readonly FourCc VttAdditionalText = new("vtta");
+    public static readonly FourCc VttCuePayload = new("payl");
+    public static readonly FourCc VttCueId = new("iden");
+    public static readonly FourCc VttCueSettings = new("sttg");
     public static readonly FourCc Stpp = new("stpp");
     public static readonly FourCc Vvc1 = new("vvc1");
     public static readonly FourCc Mp4v = new("mp4v");
