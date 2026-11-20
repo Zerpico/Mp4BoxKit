@@ -64,7 +64,7 @@ public sealed class LiveTimingCorrectionTests
     }
 
     [Fact]
-    public async Task CorrectionPreservesCompositionOffset()
+    public async Task CorrectionKeepsPresentationTime()
     {
         using var output = new MemoryStream();
         var media = new List<Fmp4Segment>();
@@ -79,7 +79,26 @@ public sealed class LiveTimingCorrectionTests
 
         var samples = await ReadSamples(output);
         Assert.Equal(1, samples[1].Dts);
-        Assert.Equal(3601, samples[1].Pts);
+        Assert.Equal(3600, samples[1].Pts);
+    }
+
+    [Fact]
+    public async Task CorrectionRaisesPtsThatWouldPrecedeDts()
+    {
+        using var output = new MemoryStream();
+        var media = new List<Fmp4Segment>();
+        using (var writer = CreateWriter(output, media, TimeSpan.FromMilliseconds(100),
+            boundary: Fmp4FragmentBoundary.Manual))
+        {
+            var track = writer.AddVideo(new VideoTrackOptions(Codec.H264, 16, 16, 90_000, TestMedia.AvcC));
+            writer.WriteSample(track, TestMedia.VideoSample(1), 0, 0, SampleFlags.KeyFrame);
+            writer.WriteSample(track, TestMedia.VideoSample(2, keyFrame: false), 3600, 3600);
+            writer.WriteSample(track, TestMedia.VideoSample(3, keyFrame: false), 1800, 1800);
+            writer.Complete();
+        }
+
+        var samples = await ReadSamples(output);
+        Assert.Equal((3601L, 3601L), (samples[2].Dts, samples[2].Pts));
     }
 
     [Fact]
