@@ -1,8 +1,9 @@
 ﻿# Mp4BoxKit
-[![Tests](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/Zerpico/518ad0fd699b8452a77db65cb2d7565b/raw/tests-badge.json)](https://github.com/Zerpico/Mp4BoxKit/actions)
 [![nuget](https://img.shields.io/nuget/v/Mp4BoxKit.svg)](https://www.nuget.org/packages/Mp4BoxKit/)  
-[![CI](https://github.com/Zerpico/Mp4BoxKit/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/Zerpico/Mp4BoxKit/actions/workflows/ci.yml)  
-[![Publish NuGet](https://github.com/Zerpico/Mp4BoxKit/actions/workflows/publish.yml/badge.svg?branch=master)](https://github.com/Zerpico/Mp4BoxKit/actions/workflows/publish.yml)
+[![Tests](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/Zerpico/518ad0fd699b8452a77db65cb2d7565b/raw/tests-badge.json)](https://github.com/Zerpico/Mp4BoxKit/actions)
+[![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/Zerpico/518ad0fd699b8452a77db65cb2d7565b/raw/coverage-badge.json)](https://github.com/Zerpico/Mp4BoxKit/actions)  
+[![CI](https://github.com/Zerpico/Mp4BoxKit/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/Zerpico/Mp4BoxKit/actions/workflows/ci.yml)
+[![Release](https://github.com/Zerpico/Mp4BoxKit/actions/workflows/release.yml/badge.svg?branch=master)](https://github.com/Zerpico/Mp4BoxKit/actions/workflows/release.yml)
 
 Простая и лёгкая .NET-библиотека для чтения, записи и инспекции MP4/fMP4. Она рассчитана на потоковую запись: вы передаёте готовые access
 units и codec configuration, а на выходе получаете classic MP4-файл или
@@ -48,7 +49,7 @@ units и codec configuration, а на выходе получаете classic MP
 #### Субтитры
 
 - tx3g
-- wvtt (только чтение)
+- wvtt (WebVTT, ISO/IEC 14496-30)
 
 ## Чтение MP4
 
@@ -105,7 +106,7 @@ H.264/H.265 samples — это length-prefixed NAL units, а не Annex B. Дл�
 ```csharp
 writer.WriteSample(
     video,
-    AvcSample.FromAnnexB(annexB),
+    NalSampleConverter.FromAnnexB(annexB, Codec.H264),
     pts,
     dts,
     SampleFlags.KeyFrame);
@@ -187,6 +188,55 @@ var config = AacAdts.CreateEsds(frame);
 var payload = AacAdts.GetPayload(frame);
 writer.WriteSample(audio, payload, pts, dts, SampleFlags.KeyFrame, duration: 1024);
 ```
+
+## Субтитры WebVTT
+
+Sample WebVTT не содержит таймингов: время реплики задаётся через DTS и
+`duration`, а sample хранит все реплики, видимые на этом интервале. Если реплики
+пересекаются или между ними есть паузы, их удобно нарезать через
+`WebVttSampleBuilder`: пересечения разбиваются на отдельные samples, а паузы
+заполняются пустыми samples (`vtte`).
+
+```csharp
+var subtitles = writer.AddSubtitle(new SubtitleTrackOptions(
+    Codec.WebVtt,
+    CodecConfiguration: WebVttConfiguration.Create("WEBVTT\n\nSTYLE\n::cue { color: yellow }"),
+    Language: Mp4Languages.Russian));
+
+var samples = WebVttSampleBuilder.Build(new[]
+{
+    new WebVttTimedCue(0, 2000, new WebVttCue("Первая реплика")),
+    new WebVttTimedCue(2500, 4000, new WebVttCue("Вторая", Settings: "line:0 align:start"))
+});
+
+foreach (var sample in samples)
+    writer.WriteSample(subtitles, sample.Data.Span, sample.Time, sample.Time,
+        duration: sample.Duration);
+```
+
+Если `CodecConfiguration` не задана, используется заголовок `WEBVTT`. Отдельный
+sample можно собрать через `WebVttSample.Create(...)`, а пустой взять из
+`WebVttSample.Empty`.
+
+### Допуск перекрытия таймингов
+
+`SubtitleTrackOptions.TimingTolerance` (для tx3g и WebVTT) убирает мелкие
+перекрытия соседних реплик, из-за которых плеер на несколько миллисекунд
+показывает две строки. Значение задаётся в тиках `TimeScale` трека; `0`
+(по умолчанию) отключает опцию.
+
+Допуск применяется, если у предыдущего sample была явная `duration`, а новый
+sample начинается раньше её конца не больше чем на допуск. Тогда начало нового
+sample сдвигается на конец предыдущего, а его конец сохраняется. Паузы и более
+крупные перекрытия не меняются.
+
+```csharp
+var s = writer.AddSubtitle(new SubtitleTrackOptions(Codec.Tx3g, TimingTolerance: 50));
+writer.WriteSample(s, first, 0, 0, duration: 1010);
+writer.WriteSample(s, second, 1000, 1000, duration: 1000); // записывается как 1010…2000
+```
+
+Тот же параметр есть у `WebVttSampleBuilder.Build(cues, timingTolerance: 50)`.
 
 ## Инспекция MP4
 

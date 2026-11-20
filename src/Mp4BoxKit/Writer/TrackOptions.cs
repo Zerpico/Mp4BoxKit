@@ -26,4 +26,5 @@ public sealed record SubtitleTrackOptions(
     int Height = 0,
     string? Name = null,
     bool IsDefault = true,
-    string Language = Mp4Languages.Undetermined);
+    string Language = Mp4Languages.Undetermined,
+    int TimingTolerance = 0);

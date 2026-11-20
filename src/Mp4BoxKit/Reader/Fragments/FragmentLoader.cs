@@ -3,11 +3,35 @@
 internal sealed class FragmentLoader(
     ContainerInput input,
     FragmentParser parser,
-    Mp4ProbeOptions options)
+    Mp4ProbeOptions options,
+    Action<SkippedFragmentInfo> fragmentSkipped,
+    Func<BoxHeader, CancellationToken, ValueTask> readMovie)
 {
+    private bool _decodeTimeUnknown;
     private readonly Dictionary<uint, long> _decodeEnds = new();
     private long? _expectedPosition;
     private List<(long Start, long End)>? _mediaRegions;
+    internal sealed record DecodeState(Dictionary<uint, long> Ends, bool Unknown, long? Position);
+
+    public bool HasUnanchoredDecodeTime { get; private set; }
+
+    public DecodeState CaptureDecodeState() =>
+        new(new Dictionary<uint, long>(_decodeEnds), _decodeTimeUnknown, _expectedPosition);
+
+    public void RestoreDecodeState(DecodeState state)
+    {
+        _decodeEnds.Clear();
+        foreach (var pair in state.Ends)
+            _decodeEnds.Add(pair.Key, pair.Value);
+        _decodeTimeUnknown = state.Unknown;
+        _expectedPosition = state.Position;
+        HasUnanchoredDecodeTime = false;
+    }
+
+    public void ResetDecodeState(long position)
+    {
+        RestoreDecodeState(new DecodeState(new Dictionary<uint, long>(), false, position));
+    }
     public async ValueTask<FragmentReaderState?> ReadNextAsync(
         IReadOnlyList<MediaTrackInfo> tracks, CancellationToken cancellationToken)
     {
@@ -20,6 +44,11 @@ internal sealed class FragmentLoader(
             var header = await input.ReadHeaderAsync(cancellationToken).ConfigureAwait(false);
             if (header is null)
                 return null;
+            if (header.Value.Type == BoxTypes.Moov)
+            {
+                await readMovie(header.Value, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
             if (header.Value.Type != BoxTypes.Moof)
             {
                 await input.SkipAsync(header.Value.PayloadSize, cancellationToken)
@@ -37,7 +66,14 @@ internal sealed class FragmentLoader(
             {
                 var continuation = input.Position;
                 var seekable = new FragmentReaderState();
-                seekable.Tracks.AddRange(parser.Parse(moof, 0, moofStart));
+                var parsed = ParseRecoverableFragment(moof, 0, moofStart);
+                if (parsed is null)
+                {
+                    continue;
+                }
+
+                seekable.Tracks.AddRange(parsed);
+                ValidateMediaBudget(seekable.Tracks);
                 using var media = new MemoryStream();
                 try
                 {
@@ -89,12 +125,17 @@ internal sealed class FragmentLoader(
             if (mdat.Value.PayloadSize > (ulong)options.MaxBoxPayloadBytes)
                 throw new Mp4FormatException("Fragment mdat exceeds configured payload limit.");
             var mediaPayloadOffset = checked((int)(input.Position - moofStart));
-            var state = new FragmentReaderState
+            var state = new FragmentReaderState();
+            var parsedTracks = ParseRecoverableFragment(moof, mediaPayloadOffset, moofStart);
+            if (parsedTracks is null)
             {
-                Media = await input.ReadPayloadAsync(mdat.Value.PayloadSize,
-                    cancellationToken).ConfigureAwait(false)
-            };
-            state.Tracks.AddRange(parser.Parse(moof, mediaPayloadOffset, moofStart));
+                await input.SkipAsync(mdat.Value.PayloadSize, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+            state.Tracks.AddRange(parsedTracks);
+            ValidateMediaBudget(state.Tracks);
+            state.Media = await input.ReadPayloadAsync(mdat.Value.PayloadSize,
+                cancellationToken).ConfigureAwait(false);
             foreach (var fragmentTrack in state.Tracks)
                 foreach (var sample in fragmentTrack.Samples)
                     if (sample.DataOffset < 0 || sample.Size < 0 ||
@@ -107,10 +148,55 @@ internal sealed class FragmentLoader(
         }
     }
 
+    private List<FragmentTrack>? ParseRecoverableFragment(byte[] moof, int mediaPayloadOffset, long moofStart)
+    {
+        List<FragmentTrack> tracks;
+        try
+        {
+            tracks = parser.Parse(moof, mediaPayloadOffset, moofStart);
+        }
+        catch (Mp4FormatException error) when (options.SkipInvalidFragments)
+        {
+            DiscardFragment(moofStart, error.Message);
+            return null;
+        }
+
+        if (_decodeTimeUnknown && tracks.Any(track => track.Samples.Count > 0 &&
+            !track.HasDecodeTime && !_decodeEnds.ContainsKey(track.TrackId)))
+        {
+            DiscardFragment(moofStart, "Decode time is unknown after a discarded fragment; tfdt is required.");
+            return null;
+        }
+        return tracks;
+    }
+
+    private void DiscardFragment(long offset, string reason)
+    {
+        _decodeEnds.Clear();
+        _decodeTimeUnknown = true;
+        fragmentSkipped(new SkippedFragmentInfo(offset, reason));
+    }
+
+    private void ValidateMediaBudget(IReadOnlyList<FragmentTrack> tracks)
+    {
+        // Offsets into the materialized media buffer are represented by int.
+        var remaining = Math.Min(options.MaxBoxPayloadBytes, Array.MaxLength);
+        foreach (var track in tracks)
+            foreach (var sample in track.Samples)
+            {
+                if (sample.Size < 0 || sample.Size > remaining)
+                    throw new Mp4FormatException("Fragment media exceeds configured payload limit.");
+                remaining -= sample.Size;
+            }
+    }
+
     private void ApplyDecodeTimes(FragmentReaderState state, IReadOnlyList<MediaTrackInfo> tracks)
     {
+        HasUnanchoredDecodeTime = false;
         foreach (var track in state.Tracks)
         {
+            if (track.Samples.Count > 0 && !track.HasDecodeTime && !_decodeEnds.ContainsKey(track.TrackId))
+                HasUnanchoredDecodeTime = true;
             track.TimeScale = tracks.FirstOrDefault(item => item.Id.Value == track.TrackId)
                 ?.TimeScale ?? 1;
             if (!track.HasDecodeTime && _decodeEnds.TryGetValue(track.TrackId, out var origin))

@@ -35,13 +35,6 @@ internal static class MovieHeaderWriter
         buffer.WriteUInt32(IsoBmffConstants.IdentityMatrixLast);
     }
 
-    internal static uint GetHandlerType(MediaType type) => new FourCc(type switch
-    {
-        MediaType.Audio => "soun",
-        MediaType.Subtitle => "subt",
-        _ => "vide"
-    }).Value;
-
     internal static FourCc GetMediaHeaderType(MediaType type) => new(type switch
     {
         MediaType.Video => "vmhd",

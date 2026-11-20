@@ -378,9 +378,10 @@ internal static class BoxTreeReader
                 break;
             case "trex":
                 AddU32Field(node, payload, 4, "trackId");
-                AddU32Field(node, payload, 8, "defaultSampleDuration");
-                AddU32Field(node, payload, 12, "defaultSampleSize");
-                AddU32Field(node, payload, 16, "defaultSampleFlags");
+                AddU32Field(node, payload, 8, "defaultSampleDescriptionIndex");
+                AddU32Field(node, payload, 12, "defaultSampleDuration");
+                AddU32Field(node, payload, 16, "defaultSampleSize");
+                AddU32Field(node, payload, 20, "defaultSampleFlags");
                 break;
             case "avcC":
                 AddByteField(node, payload, 0, "configurationVersion");

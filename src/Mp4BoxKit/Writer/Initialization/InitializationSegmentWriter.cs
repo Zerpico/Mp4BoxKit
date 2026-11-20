@@ -109,7 +109,7 @@ internal static class InitializationSegmentWriter
         {
             box.WriteUInt32(0);
             box.WriteUInt32(0);
-            box.WriteUInt32(GetHandlerType(track.Type));
+            box.WriteUInt32(CodecRegistry.GetHandlerType(track).Value);
             box.WriteUInt64(0);
             box.WriteUInt32(0);
             box.WriteBytes(System.Text.Encoding.UTF8.GetBytes(

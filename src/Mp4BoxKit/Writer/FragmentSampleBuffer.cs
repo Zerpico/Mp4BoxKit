@@ -5,6 +5,7 @@ namespace Mp4BoxKit.Writer;
 internal sealed class FragmentSampleBuffer
 {
     private readonly List<List<PendingSample>> _tracks = new();
+    private readonly List<int> _lastKnownDurations = new();
     public long PayloadBytes { get; private set; }
     public int SampleCount { get; private set; }
 
@@ -63,11 +64,26 @@ internal sealed class FragmentSampleBuffer
 
     public void FinalizeDurations()
     {
-        foreach (var samples in _tracks)
+        while (_lastKnownDurations.Count < _tracks.Count)
+            _lastKnownDurations.Add(0);
+
+        for (var i = 0; i < _tracks.Count; i++)
         {
-            if (samples.Count != 0 && samples[^1].Duration == 0)
-                samples[^1].Duration = samples.Count > 1
-                    ? Math.Max(1, samples[^2].Duration) : 1;
+            var samples = _tracks[i];
+            if (samples.Count == 0)
+                continue;
+            var last = samples[^1];
+            if (last.Duration != 0)
+            {
+                _lastKnownDurations[i] = last.Duration;
+                continue;
+            }
+
+            // The next DTS is unknown: repeat the most recent known duration, carried
+            // across fragments so a single-sample fragment does not get 1 tick.
+            if (samples.Count > 1)
+                _lastKnownDurations[i] = samples[^2].Duration;
+            last.Duration = Math.Max(1, _lastKnownDurations[i]);
         }
     }
 

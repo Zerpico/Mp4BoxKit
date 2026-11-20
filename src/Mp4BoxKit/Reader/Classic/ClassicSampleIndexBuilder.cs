@@ -5,9 +5,16 @@ internal sealed class ClassicSampleIndexBuilder(ClassicSampleTableParser tables)
     public ClassicReaderState Build(ReadOnlySpan<byte> moov)
     {
         var state = new ClassicReaderState();
-        foreach (var track in tables.ParseTracks(moov))
+        var tracks = tables.ParseTracks(moov);
+        var sampleCount = 0;
+        foreach (var track in tracks)
+            sampleCount = checked(sampleCount + track.SampleSizes.Count);
+        state.Samples.EnsureCapacity(sampleCount);
+
+        foreach (var track in tracks)
         {
-            foreach (var sample in tables.BuildSamples(track))
+            var cursor = new ClassicSampleCursor(track);
+            while (cursor.TryRead(out var sample))
             {
                 state.Samples.Add(new ClassicIndexedSample(
                     track.Track.Id, track.Track.TimeScale,

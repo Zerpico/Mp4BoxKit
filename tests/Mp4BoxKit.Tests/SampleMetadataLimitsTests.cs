@@ -22,7 +22,7 @@ public sealed class SampleMetadataLimitsTests
     public void ClassicBudgetIsSharedAcrossTracks()
     {
         var track = Box("trak", Box("mdia", Box("minf", Box("stbl",
-            Box("stsz", Words(0, 1, 1))))));
+            ValidSampleTable()))));
         using var input = new MemoryStream(Box("moov", track.Concat(track).ToArray()));
         var reader = new Mp4Reader(input, new Mp4ProbeOptions { MaxMetadataBytes = 300 });
 #pragma warning disable CS0618
@@ -33,10 +33,10 @@ public sealed class SampleMetadataLimitsTests
     [Fact]
     public void AcceptsClassicSampleAtBudgetBoundary()
     {
-        using var input = new MemoryStream(Classic(Box("stsz", Words(0, 1, 1))));
+        using var input = new MemoryStream(Classic(ValidSampleTable()));
         var reader = new Mp4Reader(input, new Mp4ProbeOptions { MaxMetadataBytes = 192 });
 #pragma warning disable CS0618
-        Assert.Equal(0, reader.ReadClassicSamples(Ignore));
+        Assert.Equal(1, reader.ReadClassicSamples(Ignore));
 #pragma warning restore CS0618
     }
 
@@ -94,6 +94,11 @@ public sealed class SampleMetadataLimitsTests
     }
 
     private static void Ignore(in SampleInfo info, ReadOnlySpan<byte> data) { }
+
+    private static byte[] ValidSampleTable() => Box("stsz", Words(0, 1, 1))
+        .Concat(Box("stts", Words(0, 1, 1, 1)))
+        .Concat(Box("stsc", Words(0, 1, 1, 1, 1)))
+        .Concat(Box("stco", Words(0, 1, 0))).ToArray();
 
     private static byte[] Classic(byte[] table) =>
         Box("moov", Box("trak", Box("mdia", Box("minf", Box("stbl", table)))));

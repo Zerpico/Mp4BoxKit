@@ -2,6 +2,8 @@
 
 internal sealed class ClassicTrack
 {
+    public bool HasCompositionOffsets;
+    public bool HasSyncSamples;
     public required MediaTrackInfo Track { get; init; }
     public readonly List<(uint Count, uint Duration)> TimeRuns = new();
     public readonly List<(uint Count, int Offset)> CompositionRuns = new();

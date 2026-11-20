@@ -19,12 +19,26 @@ internal sealed class FragmentSeeker(Stream stream, InputBuffer buffer, Fragment
             .ConfigureAwait(false);
         stream.Position = indexedOffset ?? 0;
         buffer.ResetPosition(stream.Position);
+        loader.ResetDecodeState(stream.Position);
+        var usingIndex = indexedOffset.HasValue;
         FragmentReaderState? candidate = null;
+        FragmentLoader.DecodeState? candidateDecodeState = null;
         long continuation = 0;
         double anchor = 0;
         int selectedIndex = 0;
         while (await loader.ReadNextAsync(tracks, cancellationToken).ConfigureAwait(false) is { } next)
         {
+            if (usingIndex && loader.HasUnanchoredDecodeTime)
+            {
+                // An offset alone cannot establish the DTS origin of a track without tfdt.
+                stream.Position = 0;
+                buffer.ResetPosition(0);
+                loader.ResetDecodeState(0);
+                usingIndex = false;
+                candidate = null;
+                candidateDecodeState = null;
+                continue;
+            }
             var item = next.Tracks.FirstOrDefault(t => t.TrackId == selected.Id.Value);
             if (item is null)
             {
@@ -39,6 +53,7 @@ internal sealed class FragmentSeeker(Stream stream, InputBuffer buffer, Fragment
                 {
                     candidate = next;
                     continuation = stream.Position;
+                    candidateDecodeState = loader.CaptureDecodeState();
                     anchor = (double)sample.Dts / Math.Max(1, item.TimeScale);
                     selectedIndex = i;
                 }
@@ -49,6 +64,7 @@ internal sealed class FragmentSeeker(Stream stream, InputBuffer buffer, Fragment
                 {
                     candidate = next;
                     continuation = stream.Position;
+                    candidateDecodeState = loader.CaptureDecodeState();
                     selectedIndex = 0;
                     anchor = (double)item.Samples[0].Dts / Math.Max(1, item.TimeScale);
                 }
@@ -61,6 +77,7 @@ internal sealed class FragmentSeeker(Stream stream, InputBuffer buffer, Fragment
         }
         stream.Position = continuation;
         buffer.ResetPosition(stream.Position);
+        loader.RestoreDecodeState(candidateDecodeState!);
         candidate.SampleIndices.Clear();
         foreach (var item in candidate.Tracks)
         {

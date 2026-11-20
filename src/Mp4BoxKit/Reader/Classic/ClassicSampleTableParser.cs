@@ -40,6 +40,7 @@ internal sealed class ClassicSampleTableParser(Mp4ProbeOptions options)
             }
         }
 
+        ValidateTrack(track);
         return track;
     }
 
@@ -70,8 +71,16 @@ internal sealed class ClassicSampleTableParser(Mp4ProbeOptions options)
     private static void ParseClassicSampleTable(ReadOnlySpan<byte> stbl, ClassicTrack track, SampleMetadataBudget budget)
     {
         var offset = 0;
+        uint seen = 0;
         while (TryReadChild(stbl, ref offset, out var type, out var payload))
         {
+            uint table = type == BoxTypes.Stts ? 1u : type == BoxTypes.Ctts ? 2u
+                : type == BoxTypes.Stsc ? 4u : type == BoxTypes.Stsz ? 8u
+                : type == BoxTypes.Stco || type == BoxTypes.Co64 ? 16u
+                : type == BoxTypes.Stss ? 32u : 0u;
+            if ((seen & table) != 0)
+                throw new Mp4FormatException("Duplicate classic sample table.");
+            seen |= table;
             switch (type)
             {
                 case var value when value == BoxTypes.Stts:
@@ -101,14 +110,9 @@ internal sealed class ClassicSampleTableParser(Mp4ProbeOptions options)
 
     private static void ParseTimeToSample(ReadOnlySpan<byte> payload, ClassicTrack track)
     {
-        if (payload.Length < 8)
-        {
-            return;
-        }
-
-        var count = BigEndian.U32(payload[4..]);
+        var count = ValidateTable(payload, 8, "stts");
         var offset = 8;
-        for (var i = 0; i < count && offset + 8 <= payload.Length; i++)
+        for (var i = 0; i < count; i++)
         {
             track.TimeRuns.Add((
                 BigEndian.U32(payload[offset..]),
@@ -119,15 +123,13 @@ internal sealed class ClassicSampleTableParser(Mp4ProbeOptions options)
 
     private static void ParseCompositionOffsets(ReadOnlySpan<byte> payload, ClassicTrack track)
     {
-        if (payload.Length < 8)
-        {
-            return;
-        }
-
+        var count = ValidateTable(payload, 8, "ctts");
+        if (payload[0] > 1)
+            throw new Mp4FormatException("Unsupported ctts version.");
+        track.HasCompositionOffsets = true;
         var version = payload[0];
-        var count = BigEndian.U32(payload[4..]);
         var offset = 8;
-        for (var i = 0; i < count && offset + 8 <= payload.Length; i++)
+        for (var i = 0; i < count; i++)
         {
             var value = version == 1
                 ? BigEndian.I32(payload[(offset + 4)..])
@@ -139,15 +141,12 @@ internal sealed class ClassicSampleTableParser(Mp4ProbeOptions options)
 
     private static void ParseSampleToChunk(ReadOnlySpan<byte> payload, ClassicTrack track)
     {
-        if (payload.Length < 8)
-        {
-            return;
-        }
-
-        var count = BigEndian.U32(payload[4..]);
+        var count = ValidateTable(payload, 12, "stsc");
         var offset = 8;
-        for (var i = 0; i < count && offset + 12 <= payload.Length; i++)
+        for (var i = 0; i < count; i++)
         {
+            if (BigEndian.U32(payload[(offset + 8)..]) != 1)
+                throw new Mp4FormatException("Unsupported stsc sample description index.");
             track.ChunkRuns.Add((
                 BigEndian.U32(payload[offset..]),
                 BigEndian.U32(payload[(offset + 4)..])));
@@ -184,15 +183,10 @@ internal sealed class ClassicSampleTableParser(Mp4ProbeOptions options)
 
     private static void ParseChunkOffsets(ReadOnlySpan<byte> payload, ClassicTrack track, bool wide)
     {
-        if (payload.Length < 8)
-        {
-            return;
-        }
-
-        var count = BigEndian.U32(payload[4..]);
-        var offset = 8;
         var width = wide ? 8 : 4;
-        for (var i = 0; i < count && offset + width <= payload.Length; i++)
+        var count = ValidateTable(payload, width, wide ? "co64" : "stco");
+        var offset = 8;
+        for (var i = 0; i < count; i++)
         {
             track.ChunkOffsets.Add(wide
                 ? BigEndian.U64(payload[offset..])
@@ -203,16 +197,17 @@ internal sealed class ClassicSampleTableParser(Mp4ProbeOptions options)
 
     private static void ParseSyncSamples(ReadOnlySpan<byte> payload, ClassicTrack track)
     {
-        if (payload.Length < 8)
-        {
-            return;
-        }
-
-        var count = BigEndian.U32(payload[4..]);
+        var count = ValidateTable(payload, 4, "stss");
+        track.HasSyncSamples = true;
         var offset = 8;
-        for (var i = 0; i < count && offset + 4 <= payload.Length; i++)
+        uint previous = 0;
+        for (var i = 0; i < count; i++)
         {
-            track.SyncSamples.Add(BigEndian.U32(payload[offset..]));
+            var number = BigEndian.U32(payload[offset..]);
+            if (number <= previous)
+                throw new Mp4FormatException("Invalid stss sample order.");
+            track.SyncSamples.Add(number);
+            previous = number;
             offset += 4;
         }
     }
@@ -220,89 +215,62 @@ internal sealed class ClassicSampleTableParser(Mp4ProbeOptions options)
     public List<ClassicSample> BuildSamples(ClassicTrack track)
     {
         var result = new List<ClassicSample>(track.SampleSizes.Count);
-        var sampleIndex = 0;
-        var dts = 0L;
-
-        for (var chunkIndex = 0; chunkIndex < track.ChunkOffsets.Count; chunkIndex++)
-        {
-            var chunkNumber = (uint)chunkIndex + 1;
-            var run = FindChunkRun(track.ChunkRuns, chunkNumber);
-            var sampleOffset = checked((long)track.ChunkOffsets[chunkIndex]);
-
-            for (var i = 0; i < run; i++)
-            {
-                if (sampleIndex >= track.SampleSizes.Count)
-                {
-                    break;
-                }
-
-                var size = checked((int)track.SampleSizes[sampleIndex]);
-                var duration = DurationAt(track.TimeRuns, sampleIndex);
-                var compositionOffset = OffsetAt(track.CompositionRuns, sampleIndex);
-                var sampleNumber = (uint)sampleIndex + 1;
-                var flags = track.SyncSamples.Count == 0 ||
-                    track.SyncSamples.Contains(sampleNumber)
-                    ? SampleFlags.KeyFrame
-                    : SampleFlags.None;
-
-                result.Add(new ClassicSample(
-                    sampleOffset,
-                    size,
-                    dts,
-                    dts + compositionOffset,
-                    duration,
-                    flags));
-
-                sampleOffset += size;
-                dts += duration;
-                sampleIndex++;
-            }
-        }
-
+        var cursor = new ClassicSampleCursor(track);
+        while (cursor.TryRead(out var sample))
+            result.Add(sample);
         return result;
     }
 
-    private static int FindChunkRun(List<(uint FirstChunk, uint SamplesPerChunk)> runs, uint chunk)
+    private static uint ValidateTable(ReadOnlySpan<byte> payload, int width, string name)
     {
-        for (var i = runs.Count - 1; i >= 0; i--)
-        {
-            if (chunk >= runs[i].FirstChunk)
-            {
-                return checked((int)runs[i].SamplesPerChunk);
-            }
-        }
-
-        return 0;
+        if (payload.Length < 8)
+            throw new Mp4FormatException($"Truncated {name} header.");
+        var count = BigEndian.U32(payload[4..]);
+        if (count > (payload.Length - 8) / width)
+            throw new Mp4FormatException($"Truncated {name} entries.");
+        return count;
     }
 
-    private static int DurationAt(List<(uint Count, uint Duration)> runs, int sampleIndex)
+    private static void ValidateTrack(ClassicTrack track)
     {
-        foreach (var run in runs)
+        var samples = (ulong)track.SampleSizes.Count;
+        ulong timed = 0;
+        foreach (var run in track.TimeRuns)
         {
-            if (sampleIndex < run.Count)
-            {
-                return checked((int)run.Duration);
-            }
-
-            sampleIndex -= checked((int)run.Count);
+            if (run.Count == 0)
+                throw new Mp4FormatException("Empty stts run.");
+            timed += run.Count;
         }
+        if (timed != samples)
+            throw new Mp4FormatException("stts does not cover the declared samples.");
 
-        return 0;
-    }
-
-    private static int OffsetAt(List<(uint Count, int Offset)> runs, int sampleIndex)
-    {
-        foreach (var run in runs)
+        ulong composed = 0;
+        foreach (var run in track.CompositionRuns)
         {
-            if (sampleIndex < run.Count)
-            {
-                return run.Offset;
-            }
-
-            sampleIndex -= checked((int)run.Count);
+            if (run.Count == 0)
+                throw new Mp4FormatException("Empty ctts run.");
+            composed += run.Count;
         }
+        if (track.HasCompositionOffsets && composed != samples)
+            throw new Mp4FormatException("ctts does not cover the declared samples.");
 
-        return 0;
+        ulong mapped = 0;
+        var chunks = (uint)track.ChunkOffsets.Count;
+        for (var i = 0; i < track.ChunkRuns.Count; i++)
+        {
+            var run = track.ChunkRuns[i];
+            var next = i + 1 < track.ChunkRuns.Count ? track.ChunkRuns[i + 1].FirstChunk : chunks + 1;
+            if ((i == 0 && run.FirstChunk != 1) || run.FirstChunk == 0 ||
+                run.FirstChunk > chunks || next <= run.FirstChunk || next > chunks + 1 ||
+                run.SamplesPerChunk == 0)
+                throw new Mp4FormatException("Invalid stsc chunk mapping.");
+            mapped += (ulong)(next - run.FirstChunk) * run.SamplesPerChunk;
+        }
+        if (mapped != samples || (chunks != 0 && track.ChunkRuns.Count == 0))
+            throw new Mp4FormatException("Chunk mapping does not cover the declared samples.");
+        foreach (var number in track.SyncSamples)
+            if (number > samples)
+                throw new Mp4FormatException("stss sample number exceeds sample count.");
     }
 
     public (int Offset, int Length) FindTopLevelBox(ReadOnlySpan<byte> file, FourCc wanted)

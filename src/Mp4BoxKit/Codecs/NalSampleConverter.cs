@@ -3,19 +3,21 @@
 namespace Mp4BoxKit.Codecs;
 
 /// <summary>
-/// Converts H.264 access units to the length-prefixed AVCC sample format
+/// Converts H.264/H.265 access units to the four-byte length-prefixed sample format
 /// expected by <see cref="Mp4Writer.WriteSample"/>.
 /// </summary>
-public static class AvcSample
+public static class NalSampleConverter
 {
+    private enum AvcNalType : byte { Sps = 7, Pps = 8 }
+    private enum HevcNalType : byte { Vps = 32, Sps = 33, Pps = 34 }
+
     /// <summary>
-    /// Converts an Annex B access unit (with 3- or 4-byte start codes) to AVCC.
-    /// Parameter sets are omitted by default because avc1 keeps them in avcC.
+    /// Converts one Annex B access unit (with 3- or 4-byte start codes).
+    /// Parameter sets are omitted by default; store them in avcC/hvcC instead.
     /// </summary>
-    public static ReadOnlyMemory<byte> FromAnnexB(
-        ReadOnlySpan<byte> data,
-        bool includeParameterSets = false)
+    public static ReadOnlyMemory<byte> FromAnnexB(ReadOnlySpan<byte> data, Codec codec, bool includeParameterSets = false)
     {
+        ValidateCodec(codec);
         var ranges = new List<(int Start, int Length)>();
         var start = -1;
         for (var i = 0; i + 2 < data.Length; i++)
@@ -30,14 +32,14 @@ public static class AvcSample
                 continue;
 
             if (start >= 0)
-                AddRange(data, ranges, start, i - start, includeParameterSets);
+                AddRange(data, ranges, start, i - start, codec, includeParameterSets);
             start = i + prefix;
             i = start - 1;
         }
 
         if (start < 0)
             throw new ArgumentException("Input does not contain Annex B start codes; use FromNalUnits instead.", nameof(data));
-        AddRange(data, ranges, start, data.Length - start, includeParameterSets);
+        AddRange(data, ranges, start, data.Length - start, codec, includeParameterSets);
         return WriteRanges(data, ranges, nameof(data));
     }
 
@@ -46,32 +48,35 @@ public static class AvcSample
         List<(int Start, int Length)> ranges,
         int start,
         int length,
+        Codec codec,
         bool includeParameterSets)
     {
         if (length <= 0)
             return;
-        var type = data[start] & 0x1F;
-        if (!includeParameterSets && type is 7 or 8)
+        var parameterSet = IsParameterSet(data.Slice(start, length), codec);
+        if (!includeParameterSets && parameterSet)
             return;
         ranges.Add((start, length));
     }
 
     /// <summary>
-    /// Joins separate NAL units into a length-prefixed AVCC sample.
-    /// Parameter sets are omitted by default because avc1 keeps them in avcC.
+    /// Joins raw NAL units of one access unit into a four-byte length-prefixed sample.
+    /// Parameter sets are omitted by default; store them in avcC/hvcC instead.
     /// </summary>
     public static ReadOnlyMemory<byte> FromNalUnits(
         IEnumerable<ReadOnlyMemory<byte>> nalUnits,
+        Codec codec,
         bool includeParameterSets = false)
     {
         ArgumentNullException.ThrowIfNull(nalUnits);
+        ValidateCodec(codec);
         var selected = new List<ReadOnlyMemory<byte>>();
         foreach (var nal in nalUnits)
         {
             if (nal.IsEmpty)
                 continue;
-            var type = nal.Span[0] & 0x1F;
-            if (!includeParameterSets && type is 7 or 8)
+            var parameterSet = IsParameterSet(nal.Span, codec);
+            if (!includeParameterSets && parameterSet)
                 continue;
             selected.Add(nal);
         }
@@ -96,6 +101,21 @@ public static class AvcSample
         }
 
         return result;
+    }
+
+    private static void ValidateCodec(Codec codec)
+    {
+        if (codec is not (Codec.H264 or Codec.H265))
+            throw new ArgumentOutOfRangeException(nameof(codec), "Only H.264 and H.265 NAL samples are supported.");
+    }
+
+    private static bool IsParameterSet(ReadOnlySpan<byte> nal, Codec codec)
+    {
+        if (codec == Codec.H264)
+            return (AvcNalType)(nal[0] & 0x1F) is AvcNalType.Sps or AvcNalType.Pps;
+        if (nal.Length < 2)
+            throw new ArgumentException("H.265 NAL unit requires a two-byte header.");
+        return (HevcNalType)((nal[0] >> 1) & 0x3F) is HevcNalType.Vps or HevcNalType.Sps or HevcNalType.Pps;
     }
 
     private static ReadOnlyMemory<byte> WriteRanges(

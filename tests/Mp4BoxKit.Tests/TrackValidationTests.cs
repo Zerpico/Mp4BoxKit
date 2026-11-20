@@ -58,8 +58,6 @@ public sealed class TrackValidationTests
         Assert.Throws<NotSupportedException>(() => writer.AddVideo(
             new VideoTrackOptions(Codec.Dirac, 16, 16)));
         Assert.Throws<NotSupportedException>(() => writer.AddSubtitle(
-            new SubtitleTrackOptions(Codec.WebVtt)));
-        Assert.Throws<NotSupportedException>(() => writer.AddSubtitle(
             new SubtitleTrackOptions(Codec.Ttml)));
     }
 

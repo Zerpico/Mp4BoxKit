@@ -15,7 +15,7 @@ internal static class NalUnitSampleValidator
         {
             throw new ArgumentException(
                 "Annex B start code detected. H.264/H.265 samples must be length-prefixed " +
-                "AVCC/HVCC, not Annex B; convert with AvcSample.FromAnnexB before WriteSample.",
+                "AVCC/HVCC, not Annex B; convert with NalSampleConverter.FromAnnexB using the track codec before WriteSample.",
                 "data",
                 error);
         }
@@ -42,6 +42,7 @@ internal static class NalUnitSampleValidator
 
             var nal = sample.Slice(offset, (int)length);
             var type = hevc ? (nal[0] >> 1) & 0x3F : nal[0] & 0x1F;
+            // HEVC types 0–31 are VCL; AVC VCL types span non-IDR through IDR slices.
             if (hevc ? type <= 31 : type is >= 1 and <= 5)
                 hasVcl = true;
             offset += (int)length;

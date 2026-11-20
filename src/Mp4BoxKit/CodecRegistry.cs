@@ -75,6 +75,13 @@ internal static class CodecRegistry
             $"Codec {track.Codec} cannot be written as an ISO-BMFF sample entry.");
     }
 
+    public static FourCc GetHandlerType(MediaTrackInfo track) => new(track.Type switch
+    {
+        MediaType.Video => "vide",
+        MediaType.Audio => "soun",
+        _ => TextHandlerCodecs.Contains(track.Codec) ? "text" : "subt"
+    });
+
     public static bool IsVisual(Codec codec) => codec is
         Codec.H264 or Codec.H265 or Codec.Vvc or Codec.Av1 or Codec.Vp8 or
         Codec.Vp9 or Codec.Mpeg4Video or Codec.Mpeg2Video or Codec.Jpeg or
@@ -94,7 +101,7 @@ internal static class CodecRegistry
 
     private static readonly HashSet<Codec> WritableSubtitleCodecs = new()
     {
-        Codec.Tx3g
+        Codec.Tx3g, Codec.WebVtt
     };
 
     private static readonly HashSet<Codec> AudioCodecs = new()
@@ -108,11 +115,18 @@ internal static class CodecRegistry
         Codec.Tx3g, Codec.WebVtt, Codec.Ttml
     };
 
+    // Subtitle formats carried as text tracks (ISO/IEC 14496-30 WebVTT uses the "text" handler).
+    private static readonly HashSet<Codec> TextHandlerCodecs = new()
+    {
+        Codec.WebVtt
+    };
+
     private static readonly HashSet<Codec> ConfigurationCodecs = new()
     {
         Codec.H264, Codec.H265, Codec.Vvc, Codec.Av1, Codec.Vp8, Codec.Vp9,
         Codec.Mpeg4Video, Codec.Mpeg2Video, Codec.Aac, Codec.Mp3,
-        Codec.Mpeg1Audio, Codec.Opus, Codec.Ac3, Codec.EAc3, Codec.Dts
+        Codec.Mpeg1Audio, Codec.Opus, Codec.Ac3, Codec.EAc3, Codec.Dts,
+        Codec.WebVtt
     };
 
     public static bool IsWritableVideo(Codec codec) => WritableVideoCodecs.Contains(codec);
